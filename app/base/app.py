@@ -21,16 +21,16 @@ class App(QtWidgets.QApplication):
         self.args = []
 
         self.plugins = {}
-        self.shortcuts = {}
-        for p in ["log"]+self.info.get("plugins",[]):
+        self.publicfuns = {}
+        for p in ["log", "cmd"]+self.info.get("plugins",[]):
             plugin = importlib.import_module("plugins."+p).Plugin(self)
             self.plugins[p] = plugin
             publicfuns = inspect.getmembers(plugin, lambda x: hasattr(x,"__dict__") and "__is_public_fun__" in x.__dict__)
 
             for name,pf in publicfuns:
-                self.log.info(f"found public fun {name} in {p}")
-                shortcut = pf.__dict__["__public_fun_shortcut__"]
-                if shortcut: self.shortcuts[shortcut] = FunShortcut(self, p,name,shortcut,pf)
+                #self.log.info(f"found public fun {name} in {p}")
+                sc = FunShortcut(self, p,name,pf)
+                self.publicfuns[sc.name] = sc
 
         self.aboutToQuit.connect(self.stop)
 
@@ -52,21 +52,26 @@ class App(QtWidgets.QApplication):
         self.stop()
 
 class FunShortcut(QtCore.QObject):
-    def __init__(self, app, plugin, name, shortcut, fn):
+    def __init__(self, app, plugin, name, fn):
         super().__init__()
         self.app = app
-        self.shortcut = shortcut
+        self.shortcut = fn.__dict__["__public_fun_shortcut__"]
         self.fn = fn
+        self.name = f"{plugin}.{name}"
         self.action = QtWidgets.QAction(app)
-        self.action.setText(f"{plugin}.{name}")
+        self.action.setText(self.name)
         self.action.setToolTip("TBD")
-        self.action.setShortcut(self.shortcut)
+        if self.shortcut:self.action.setShortcut(self.shortcut)
         self.action.triggered.connect(self.execute)
         app.gui.addAction(self.action)
-        print(f"registered {name} at {shortcut}")
 
     def execute(self):
         try:
             self.fn()
         except Exception as e:
             self.app.log.error(e)
+
+    def getDescr(self):
+        descr = inspect.getdoc(self.fn)
+        if not descr: descr = "descr n/a"
+        return descr

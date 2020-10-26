@@ -16,7 +16,7 @@ class Plugin(_P):
         log = self.log
 
         log.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(relativeCreated)08d %(name)s\t%(levelname)s:\t%(message)s')
+        formatter = logging.Formatter('%(relativeCreated)08d %(levelname)s:\t%(message)s')
         log._fmt = formatter
 
         #reroute stdin, stderr
@@ -46,7 +46,10 @@ class Plugin(_P):
         pass
     
     @publicFun(guishortcut="Ctrl+L")
-    def toggleWidget(self):
+    def toggle(self):
+        """
+        Toggles the log window
+        """
         self.logwidget.togglehide()
 
 def connectLog2fn(log, fn ,s):
