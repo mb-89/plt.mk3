@@ -1,4 +1,5 @@
-{   "name": "metaproject.mk3",
+{
+    "name": "metaproject.mk3",
     "author": "mb-89",
     "version":"0.0.1",
     "description": "base framework for small, Qt based programs",
