@@ -85,9 +85,13 @@ class Widget(QtWidgets.QDockWidget):
                     self.app.log.info(f"Ctrl+Space for autocomplete.")
                     self.app.log.info(f"enter <function name> for help on function (eg: 'log.toggle' shows help on log.toggle).")
                     self.app.log.info(f"enter <function name>(args) to call a function (eg: 'log.toggle()' toggles log.")
+                    self.app.log.info(f"Functions available:")
+                    for fn in sorted(self.app.publicfuns.keys()):
+                        self.app.log.info(fn)
             else:
                 targetfun = self.app.publicfuns[cmd]
                 #do arg parsing later (TODO)
                 targetfun.action.trigger()
         except KeyError:
             self.app.log.error(f"<<< invalid command")
+        #self.app.log.info("")

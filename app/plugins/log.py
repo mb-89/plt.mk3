@@ -3,7 +3,7 @@ from .__plugin__ import publicFun
 
 import logging
 import sys
-from PySide2 import QtCore, QtWidgets
+from PySide2 import QtCore, QtWidgets, QtGui
 from functools import partial
 
 class Plugin(_P):
@@ -16,8 +16,13 @@ class Plugin(_P):
         log = self.log
 
         log.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(relativeCreated)08d %(levelname)s:\t%(message)s')
+        formatter = logging.Formatter('%(relativeCreated)08d %(levelname)s: %(message)s')
         log._fmt = formatter
+
+        logging.addLevelName(logging.DEBUG, 'DBG ')
+        logging.addLevelName(logging.INFO, 'INFO')
+        logging.addLevelName(logging.WARNING, 'WARN')
+        logging.addLevelName(logging.ERROR, 'ERR ')
 
         #reroute stdin, stderr
         log._STDerrLogger = StreamToLogger(log, logging.ERROR)
@@ -70,6 +75,11 @@ class LogWidget(QtWidgets.QDockWidget):
         super().__init__()
         self.app = app
         self.lw = QtWidgets.QPlainTextEdit()
+
+        f = QtGui.QFont("monospace")
+        f.setStyleHint(QtGui.QFont.TypeWriter)
+        self.lw.setFont(f)
+
         self.lw.setReadOnly(True)
         self.lw.setUndoRedoEnabled(False)
         self.lw.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
