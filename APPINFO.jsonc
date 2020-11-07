@@ -1,8 +1,8 @@
 {
-    "name": "metaproject.mk3",
+    "name": "plt.mk3",
     "author": "mb-89",
     "version":"0.0.1",
-    "description": "base framework for small, Qt based programs",
-    "url": "https://github.com/mb-89/metaproject.mk3.git",
+    "description": "plotter based on metaproject.mk3",
+    "url": "https://github.com/mb-89/plt.mk3.git",
     "py_req": ">=3.8.1"
 }

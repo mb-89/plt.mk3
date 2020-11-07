@@ -81,10 +81,13 @@ class Widget(QtWidgets.QDockWidget):
                     self.app.log.info("="*30)
                 else:
                     #print general help
-                    self.app.log.info(f"Help:")
+                    self.app.log.info(f"{self.app.info['name']} help:")
+                    self.app.log.info(f"{self.app.info['description']}")
+                    self.app.log.info("="*30)
                     self.app.log.info(f"Ctrl+Space for autocomplete.")
                     self.app.log.info(f"enter <function name> for help on function (eg: 'log.toggle' shows help on log.toggle).")
                     self.app.log.info(f"enter <function name>(args) to call a function (eg: 'log.toggle()' toggles log.")
+                    self.app.log.info("="*30)
                     self.app.log.info(f"Functions available:")
                     for fn in sorted(self.app.publicfuns.keys()):
                         self.app.log.info(fn)
