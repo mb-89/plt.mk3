@@ -6,8 +6,10 @@ import json
 import plugins
 import importlib
 import inspect
+from functools import partial
 
 class App(QtWidgets.QApplication):
+    cmdDone = QtCore.Signal()
     def __init__(self):
         super().__init__([])
 
@@ -19,6 +21,9 @@ class App(QtWidgets.QApplication):
         self.gui.setWindowTitle(self.info["name"])
         self.log = None
         self.args = []
+        self.cmdbacklog = []
+        self.cmdDone.connect(lambda:self.execNextCmd(notBusyAnymore=True))
+        self.cmdbusy = False
 
         self.plugins = {}
         self.publicfuns = {}
@@ -40,6 +45,9 @@ class App(QtWidgets.QApplication):
         self.started = True
         self.gui.show()
         for p in self.plugins.values(): p.start()
+        for idx,cmd in enumerate(args["cmds"]):
+            p = partial(self.plugins["cmd"].parse, cmd)
+            QtCore.QTimer.singleShot(idx,p)
         self.exec_()
 
     def stop(self):
@@ -51,12 +59,21 @@ class App(QtWidgets.QApplication):
     def __del__(self):
         self.stop()
 
+    def execNextCmd(self, notBusyAnymore = False):
+        if notBusyAnymore: self.cmdbusy = False
+        if self.cmdbusy:return
+        self.cmdbusy = True
+        if not self.cmdbacklog: return
+        cmd = self.cmdbacklog.pop(0)
+        cmd()
+
 class FunShortcut(QtCore.QObject):
     def __init__(self, app, plugin, name, fn):
         super().__init__()
         self.app = app
         self.shortcut = fn.__dict__["__public_fun_shortcut__"]
         self.fn = fn
+        self.argstr = ""
         self.name = f"{plugin}.{name}"
         self.action = QtWidgets.QAction(app)
         self.action.setText(self.name)
@@ -65,9 +82,18 @@ class FunShortcut(QtCore.QObject):
         self.action.triggered.connect(self.execute)
         app.gui.addAction(self.action)
 
+    def trigger(self,argstr):
+        self.argstr = argstr
+        self.action.trigger()
+
     def execute(self):
         try:
-            self.fn()
+            if self.argstr:
+                argstr = self.argstr
+                self.argstr = ""
+                self.fn(argstr)
+            else:
+                self.fn()
         except Exception as e:
             self.app.log.error(e)
 
