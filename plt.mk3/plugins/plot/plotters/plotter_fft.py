@@ -5,9 +5,17 @@ import numpy as np
 
 class Plotter(_P):
     def getPlot(self,ds):
+
+        #bc the plotter will override all functions targeted at this plot, check if any other
+        #ffts should also be plotted
+        
+        #Yax = self.context["dss"]["Yax"]
+        #MeAndMyBrothers = [x for x in self.context["info"]["dss"] if x["Yax"] == self.context["dss"]["Yax"]]
+
         L = pg.GraphicsLayout()
         FofT = L.addPlot(row=0, col=0)
         FofF = L.addPlot(row=1, col=0)
+        L.layout.setRowStretchFactor(1,2)
         region = pg.LinearRegionItem()
         
         FofT.plot(x=ds.index,y=ds.values)

@@ -25,7 +25,7 @@ class Plugin(_P):
         self.widget.DFview.fileDropped.connect(lambda x:self.open(x))
 
     @publicFun(guishortcut="Ctrl+o", isAsync = True)
-    def open(self, path: str) -> int:
+    def open(self, path: str = "") -> int:
         """
         Opens a file on disk and tries to parse the contents into dataframes
         """
@@ -61,8 +61,24 @@ class Plugin(_P):
         Sets the y axis function for the given DS, either "DS<x>" or the shortname
         """
         dsAndFun = dsAndFun.split(",")
+        fun = ",".join(dsAndFun[1:])
+        dsAndFun = [x for x in (dsAndFun[0],fun) if x]
+
         if len(dsAndFun) != 2: return -1
         self.DSmodel.setYfun(dsAndFun[0], dsAndFun[1])
+        return 0
+
+    @publicFun()
+    def addUserFun(self, NameAndFun: str) -> int:
+        """
+        Adds a user function to the list of dataseries
+        """
+        NameAndFun = NameAndFun.split(",")
+        fun = ",".join(NameAndFun[1:])
+        NameAndFun = [x for x in (NameAndFun[0],fun) if x]
+
+        if len(NameAndFun) != 2: return -1
+        self.DSmodel.addUserFun(NameAndFun[0], NameAndFun[1])
         return 0
 
     def start(self):
@@ -105,8 +121,11 @@ class Plugin(_P):
 
         #now, we use the threadpool to parse all files in the background
         #print(f"main:{QtCore.QThread.currentThread()}")
-        pool = QtCore.QThreadPool.globalInstance()
-        for p in parseList:pool.start(p)
+        if not self.app.args.get("nomultithread"):
+            pool = QtCore.QThreadPool.globalInstance()
+            for p in parseList:pool.start(p)
+        else:
+            for p in parseList: p.run()
 
     def getParserResults(self, dfs):
         for x in dfs: self.DFmodel.appendRow(self.DFmodel.df2qtRow(x))
@@ -178,8 +197,10 @@ class DFModel(QtGui.QStandardItemModel):
 
     def df2qtRow(self, df):
         row = []
+        attrs="\n".join(f"{k}: {v}" for k,v in df.attrs.items())
         for idx in range(len(self.header)):
             item = QtGui.QStandardItem(str(df.attrs[self.srcattr[idx]]))
+            item.setToolTip(attrs)
             item.setData(df, QtCore.Qt.UserRole)
             row.append(item)
         return row
@@ -259,6 +280,7 @@ class DSModel(QtGui.QStandardItemModel):
         self.setHorizontalHeaderLabels(self.header)
         self.setColumnCount(len(self.header))
         self.contents = {}
+        self.nrOfUserFuns = 0
 
     def appendColsFromDFs(self, dfs):
         cols = sorted(list(set(list(itertools.chain(*(list(x.columns)+[x.index.name] for x in dfs))))))
@@ -308,6 +330,24 @@ class DSModel(QtGui.QStandardItemModel):
         if name in shortnames: obj = root.child(shortnames.index(name)).data(QtCore.Qt.UserRole)
         obj.items[2].setText(Yfun)
         self.updateView.emit()
+
+    def addUserFun(self, name, Yfun):
+        if name in self.contents:return
+        root = self.invisibleRootItem()
+        shortname = f"UF{self.nrOfUserFuns}"
+        self.nrOfUserFuns+=1
+        row = [
+            QtGui.QStandardItem(shortname),
+            QtGui.QStandardItem(f"{name}"),
+            QtGui.QStandardItem(f"{Yfun}"),
+            QtGui.QStandardItem(f""),
+            QtGui.QStandardItem(f""),
+            QtGui.QStandardItem(f""),
+        ]
+        self.appendRow(row)
+        self.contents[name] = DScontainer({}, row)
+        for x in row:
+            x.setData(self.contents[name], QtCore.Qt.UserRole)
 
 class DScontainer():
     def __init__(self, attrs, items):

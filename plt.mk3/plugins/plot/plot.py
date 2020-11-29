@@ -3,8 +3,12 @@ import os.path as op
 sys.path.append(op.abspath(op.join(op.dirname(__file__),"..")))
 from __plugin__ import Plugin as _P
 from __plugin__ import publicFun
+
 from . import plotters
 from .plotters import *
+from . import functions
+from .functions import *
+
 from PySide2 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 import pyqtgraph.exporters
@@ -55,6 +59,7 @@ class PlotRunner(QtCore.QRunnable):
         self.widget = widget
         self.coordsystems = []
         self.plottypes = self.widget.plotbib
+        self.functions = self.widget.funbib
     def run(self):
         graphs = self.createLayout()
         self.plot(graphs)
@@ -64,7 +69,7 @@ class PlotRunner(QtCore.QRunnable):
         #plotinfo["dss"] contains the dataseries that are plotted on at least one y axis
 
         graphs = []
-        for idx in range(9):graphs.append(Graph(self.plottypes))
+        for idx in range(9):graphs.append(Graph(self.plottypes, self.functions))
 
         for ds in self.plotinfo["dss"].values():
             yaxes = tuple(int(x)-1 for x in ds["Yax"].split(", "))
@@ -85,9 +90,10 @@ class PlotRunner(QtCore.QRunnable):
             yield lst[i:i + n]
 
 class Graph():
-    def __init__(self, plottypes):
+    def __init__(self, plottypes,functions):
         self.dss = []
         self.plottypes = plottypes
+        self.functions = functions
     def buildgraph(self, _plotinfo, _widget, _row, _col, _coordsystems):
         #first, we get local variables for all dataframes:
         for _k,_v in _plotinfo["dfs"].items():
@@ -102,9 +108,14 @@ class Graph():
         _L = len(_plotinfo["dfs"])*len(self.dss)
         _cnt = 0
         for _k,_v in _plotinfo["dfs"].items():
+            #fill all dataseries attrs with the attrs from the df:
             vars()["DF"] = vars()[_k]
+            for _k2 in vars()[_k].keys():
+                vars()[_k][_k2].attrs = {}
+                for _k3,_v3 in vars()[_k].attrs.items():
+                    vars()[_k][_k2].attrs[_k3]=_v3
             _scope = vars()
-            _builtins = {"math":math, "np":np, "pd":pd, "plots":self.plottypes.plotterContainer}
+            _builtins = {"math":math, "np":np, "pd":pd, "plots":self.plottypes.plotterContainer, "funs": self.functions.funContainer}
             _xnames = []
             _ynames = {}
 
@@ -152,6 +163,7 @@ class Graph():
         return _target
 
 class Plotters():pass
+class Functions():pass
 
 class PlotterBibliothek():
     def __init__(self):
@@ -179,16 +191,29 @@ class PlotterBibliothek():
                 plotterList[k.replace("plotter_","")] = plotter
         return plotterList
 
-    def spectogram(self, ydata):
-        #spec = pg.GraphicsLayout()
-        #X = [x*0.01 for x in range(0,500)]
-        #Y= [math.sin(x) for x in X]
-        #plot = spec.addPlot(0,0)
-        #plot.plot(X,Y)
-        return Plotter().getPlot()
+class FunctionBibliothek():
+    def __init__(self):
+
+        self.funContainer = Functions()
+        self.funDict = {}
+
+        for k,v in self.getFunctions().items():
+            self.funDict[k] = v()
+            setattr(self.funContainer,k,self.funDict[k].calc)
+
+    def getFunctions(self):
+        funList = {}
+        for k,v in inspect.getmembers(functions, inspect.ismodule):
+            if k.startswith("_"): continue
+            else:
+                try:function = v.Function
+                except: pass
+                funList[k.replace("function_","")] = function
+        return funList
 
 class Widget(pg.GraphicsLayoutWidget):
     def __init__(self, app):
         super().__init__()
         self.app = app
         self.plotbib = PlotterBibliothek()
+        self.funbib = FunctionBibliothek()

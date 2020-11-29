@@ -60,7 +60,7 @@ class App(QtWidgets.QApplication):
         self.stop()
 
     def execNextCmd(self, notBusyAnymore = False):
-        if notBusyAnymore: self.cmdbusy = False
+        if notBusyAnymore or self.args["nomultithread"]: self.cmdbusy = False
         if self.cmdbusy:return
         self.cmdbusy = True
         if not self.cmdbacklog: return

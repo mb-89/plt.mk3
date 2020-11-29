@@ -3,6 +3,7 @@ from .__plugin__ import publicFun
 from PySide2 import QtCore, QtWidgets
 import re
 from functools import partial
+import os.path as op
 
 class Plugin(_P):
     def __init__(self, app):
@@ -59,6 +60,17 @@ class Widget(QtWidgets.QDockWidget):
             txt = self.txt.text()
             self.txt.clear()
             self.app.plugins["log"].logwidget.setVisible(True)
+
+        if op.isfile(fp := op.abspath(txt)):
+            filecmds = open(fp,"r").readlines()
+            if filecmds:
+                self.app.log.info(f">>> executing {fp}")
+            for idx, cmd in enumerate(filecmds):
+                x = cmd.strip()
+                if not x:continue
+                QtCore.QTimer.singleShot(idx+1, partial(self.parse,x) )
+            return
+
         cmdmatches = re.findall(r"(.*?)\((.*)\)",txt)
         if cmdmatches: cmdmatches = cmdmatches[0]
         self.app.log.info(f">>> {txt}")
