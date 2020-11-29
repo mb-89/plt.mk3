@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 import inspect
 
+DSHeader = None
+
 class Plugin(_P):
     def __init__(self, app):
         super().__init__(app)
@@ -31,8 +33,11 @@ class Plugin(_P):
         """
         Plots the selected series functions of the selected frames vs the selected axes
         """
+        global DSHeader
         plotinfo = self.app.plugins["data"].getPlotInfo()
+        DSHeader = self.app.plugins["data"].DSmodel.header
         runner = PlotRunner(plotinfo, self.widget)
+
         #pool = QtCore.QThreadPool.globalInstance()
         #pool.start(runner)
         runner.run()
@@ -67,12 +72,12 @@ class PlotRunner(QtCore.QRunnable):
     def createLayout(self):
         #plotinfo["dfs"] contains the dataframes that were selected
         #plotinfo["dss"] contains the dataseries that are plotted on at least one y axis
-
+        self.coordsystems = []
         graphs = []
         for idx in range(9):graphs.append(Graph(self.plottypes, self.functions))
 
         for ds in self.plotinfo["dss"].values():
-            yaxes = tuple(int(x)-1 for x in ds["Yax"].split(", "))
+            yaxes = tuple(int(x)-1 for x in ds.items[DSHeader.Yax].text().split(", "))
             for yax in yaxes: graphs[yax].dss.append(ds)
         
         return tuple(self.chunks(tuple(x for x in graphs if x.dss),3))
@@ -94,17 +99,22 @@ class Graph():
         self.dss = []
         self.plottypes = plottypes
         self.functions = functions
+
     def buildgraph(self, _plotinfo, _widget, _row, _col, _coordsystems):
         #first, we get local variables for all dataframes:
         for _k,_v in _plotinfo["dfs"].items():
             if _k.startswith("DF"):
                 vars()[_k] = _v
+
         #now we get a shortcut for all dataseries names:
         for _k,_ds in _plotinfo["dss"].items():
             if _k.startswith("DS"):
-                vars()[_ds["#"]] = _ds["name"]
+                vars()[_ds.items[DSHeader.idx].text()] = _ds.items[DSHeader.name].text()
         
-        #finally, loop over all dataframes again and use the shortcuts to plot the data:
+        #now we walk over all ds that are plotted in this graph and evaluate the X,Y,trig expressions
+        _ydatas = []
+        _xdatas = []
+
         _L = len(_plotinfo["dfs"])*len(self.dss)
         _cnt = 0
         for _k,_v in _plotinfo["dfs"].items():
@@ -115,52 +125,37 @@ class Graph():
                 for _k3,_v3 in vars()[_k].attrs.items():
                     vars()[_k][_k2].attrs[_k3]=_v3
             _scope = vars()
-            _builtins = {"math":math, "np":np, "pd":pd, "plots":self.plottypes.plotterContainer, "funs": self.functions.funContainer}
+            _builtins = {"math":math, "np":np, "pd":pd, "funs": self.functions.funContainer}
             _xnames = []
-            _ynames = {}
+            _ynames = []
+            
 
             for _ds in self.dss:
-                if not _ds["y=f(...)"].startswith("plots."): continue
-                vars()["DS"] = _ds["name"]
-                #lets do the special plots first. here,
-                #the ydata expression returns a GraphicsLayoutWidget
-                #this also means we dont do the rest of the loop
-                #and instantly return instead.
-                self.plottypes.setCurrentContext(_plotinfo, self.dss)
-                _ydataexpr = _ds["y=f(...)"]
-                _target = eval(_ydataexpr, {'__builtins__': _builtins}, _scope)
-                _widget.addItem(_target,row=_row,col=_col)
-                return _target
-
-            _target = _widget.addPlot(row=_row,col=_col)
-            _target.addLegend()
-            _target.showGrid(x = True, y = True, alpha = 0.3)
-
-            for _ds in self.dss:
-                vars()["DS"] = _ds["name"]
-                if _ds["y=f(...)"].startswith("plots."):
-                    continue
-                _ydataexpr = _ds["y=f(...)"]
-                _triggerexpr = _ds["Trig"]
+                vars()["DS"] = _ds.items[DSHeader.name].text()
+                _ydataexpr = _ds.items[DSHeader.Yfun].text()
+                _triggerexpr = _ds.items[DSHeader.Xtrig].text()
                 try: _ydata = eval(_ydataexpr, {'__builtins__': _builtins}, _scope)
                 except: continue #if we didnt find anything
                 _xdata = _ydata.index
                 _xnames.append(_xdata.name)
-                _ynames[_ydata.name] = f"Y{len(_ynames)+1}"
+                _ynames.append((_ds.items[DSHeader.name].text(),_k))
                 if _triggerexpr:
                     try:
                         _trigvals = eval(_triggerexpr, {'__builtins__': _builtins}, _scope)
                         _xdata -= _trigvals.idxmax()
                     except: pass #if the expression was nonsense, ignore it
-                    
-                _target.plot(x=_xdata,y=_ydata,pen=(_cnt,_L), name = f'{_ynames[_ydata.name]} @ {_k}')
-                _cnt+=1
+                
+                #if we are here, we have a valid xdata and ydata we can collect
+                _ydatas.append(_ydata)
+                _xdatas.append(_xdata)
+        
+        #after collecting all the data, we can use ydats, xnames, ynames to construct our plot
+        #the plotter plugins should return a subclass of __plotter__.SubPlot
 
-        _target.setLabel("bottom", "/ ".join(sorted(list(set(_xnames)))))
-        _target.setLabel("left", "/ ".join(sorted(list(set([f"{k} ({v})" for k,v in _ynames.items()])))))
-        if _coordsystems:_target.setXLink(_coordsystems[0])
-        _coordsystems.append(_target)
-        return _target
+        plotter = self.plottypes.plotterDict.get(self.dss[0].items[DSHeader.type].text())
+        if not plotter: return
+        plt = plotter.getPlot(_xdatas,_ydatas,_xnames,_ynames,_plotinfo,self.dss,_coordsystems)
+        _widget.addItem(plt,row=_row,col=_col)
 
 class Plotters():pass
 class Functions():pass

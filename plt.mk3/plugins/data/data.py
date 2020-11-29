@@ -11,15 +11,29 @@ from . import parsers
 from .parsers import *
 import time
 import itertools
+import enum
+
+class DSheader(enum.Enum):
+    type = 0,
+    idx = 1,
+    name = 2,
+    Yfun = 3,
+    Yax = 4,
+    Xax = 5,
+    Xtrig = 6
+
+app = None
 
 class Plugin(_P):
-    def __init__(self, app):
-        super().__init__(app)
-        self.DFmodel = DFModel(app)
-        self.DSmodel = DSModel(app)
-        self.widget = Widget(app)
+    def __init__(self, app_in):
+        global app
+        super().__init__(app_in)
+        self.DFmodel = DFModel(app_in)
+        self.DSmodel = DSModel(app_in)
+        self.widget = Widget(app_in)
         self.parsers = self.getParsers()
-        self.app = app
+        self.app = app_in
+        app = app_in
         self.DFmodel.updateView.connect(self.widget.DFview.viewport().repaint)
         self.DSmodel.updateView.connect(self.widget.DSview.viewport().repaint)
         self.widget.DFview.fileDropped.connect(lambda x:self.open(x))
@@ -66,6 +80,16 @@ class Plugin(_P):
 
         if len(dsAndFun) != 2: return -1
         self.DSmodel.setYfun(dsAndFun[0], dsAndFun[1])
+        return 0
+
+    @publicFun()
+    def setPlotType(self, dsAndType: str) -> int:
+        """
+        Sets the plot type for the given DS, either "DS<x>" or the shortname
+        """
+        dsAndType = dsAndType.split(",")
+        if len(dsAndType) != 2: return -1
+        self.DSmodel.setPlotType(dsAndType[0], dsAndType[1])
         return 0
 
     @publicFun()
@@ -153,9 +177,9 @@ class Plugin(_P):
         mdl = self.widget.DSview.model().invisibleRootItem()
         for idx in range(mdl.rowCount()):
             ds = mdl.child(idx).data(QtCore.Qt.UserRole)
-            name = mdl.child(idx).text()
-            if ds.attrs.get("_selected"):
-                dss[name] = dict( ( (k,v) for k,v in zip(self.widget.DSview.model().header, (x.text() for x in ds.items)) ) )
+            shortname = ds.items[DSheader.idx].text()
+            name = ds.items[DSheader.name].text()
+            if ds.attrs.get("_selected"):dss[shortname] = ds
         return {"dfs":dfs, "dss": dss}
 
 class Widget(QtWidgets.QDockWidget):
@@ -181,7 +205,7 @@ class Widget(QtWidgets.QDockWidget):
         self.setHidden(False)
         for idx in range(len(self.DFview.model().header)):
             self.DFview.resizeColumnToContents(idx)
-        for idx in range(len(self.DSview.model().header)):
+        for idx in range(len(DSheader)):
             self.DSview.resizeColumnToContents(idx)
 
 ### dataframe stuff --------------------------------------------------------------------------------
@@ -273,32 +297,21 @@ class DFDelegate(QtWidgets.QStyledItemDelegate):
 ## dataseries stuff --------------------------------------------------------------------------------
 class DSModel(QtGui.QStandardItemModel):
     updateView = QtCore.Signal()
-    header = ["#", "name", "y=f(...)", "Yax", "Xax", "Trig"]
     def __init__(self, app):
         super().__init__()
         self.app = app
-        self.setHorizontalHeaderLabels(self.header)
-        self.setColumnCount(len(self.header))
+        self.setHorizontalHeaderLabels([x.name for x in DSheader])
+        self.setColumnCount(len(DSheader))
         self.contents = {}
         self.nrOfUserFuns = 0
+        self.header = DSheader
 
     def appendColsFromDFs(self, dfs):
         cols = sorted(list(set(list(itertools.chain(*(list(x.columns)+[x.index.name] for x in dfs))))))
         for col in cols:
             if col in self.contents: continue
             shortname = f"DS{len(self.contents)}"
-            row = [
-                QtGui.QStandardItem(shortname),
-                QtGui.QStandardItem(f"{col}"),
-                QtGui.QStandardItem(f"DF[DS]"),
-                QtGui.QStandardItem(f""),
-                QtGui.QStandardItem(f""),
-                QtGui.QStandardItem(f""),
-            ]
-            self.appendRow(row)
-            self.contents[col] = DScontainer({}, row)
-            for x in row:
-                x.setData(self.contents[col], QtCore.Qt.UserRole)
+            DScontainer(self, {}, shortname, col, "DF[DS]")
 
     def setYax(self, nameOrIdx, Yax, newval = -1):
         #newval : 0 = off, 1 = on, -1 = toggle (default)
@@ -306,8 +319,8 @@ class DSModel(QtGui.QStandardItemModel):
         except:attrs = None
         if attrs is None:
             root = self.invisibleRootItem()
-            dsnames = [root.child(idx).text() for idx in range(root.rowCount())]
-            shortnames = [root.child(idx,1).text() for idx in range(root.rowCount())]
+            shortnames = list(self.contents.keys())
+            dsnames = [x.items[DSheader.name].text() for x in self.contents.values()]
             if nameOrIdx in dsnames:    nameOrIdx = root.child(dsnames.index(nameOrIdx)).data(QtCore.Qt.UserRole)
             if nameOrIdx in shortnames: nameOrIdx = root.child(shortnames.index(nameOrIdx)).data(QtCore.Qt.UserRole)
 
@@ -317,42 +330,52 @@ class DSModel(QtGui.QStandardItemModel):
         if   (Yax in targetYaxes)     and newval in (-1,0): targetYaxes.remove(Yax)
         elif (Yax not in targetYaxes) and newval in (-1,1): targetYaxes.append(Yax)
         attrs["_selected"] = len(targetYaxes)>0
-        nameOrIdx.items[3].setText(", ".join((str(x) for x in targetYaxes)))
+        nameOrIdx.items[DSheader.Yax].setText(", ".join((str(x) for x in targetYaxes)))
         self.updateView.emit()
 
     def setYfun(self, name, Yfun):
         #newval : 0 = off, 1 = on, -1 = toggle (default)
 
         root = self.invisibleRootItem()
-        dsnames = [root.child(idx).text() for idx in range(root.rowCount())]
-        shortnames = [root.child(idx,1).text() for idx in range(root.rowCount())]
+        dsnames = list(self.contents.keys())
+        shortnames = [x.items[DSheader.idx].text() for x in self.contents.values()]
         if name in dsnames:    obj = root.child(dsnames.index(name)).data(QtCore.Qt.UserRole)
         if name in shortnames: obj = root.child(shortnames.index(name)).data(QtCore.Qt.UserRole)
-        obj.items[2].setText(Yfun)
+        obj.items[DSheader.Yfun].setText(Yfun)
         self.updateView.emit()
 
+    def setPlotType(self, name, type):
+        root = self.invisibleRootItem()
+        dsnames = list(self.contents.keys())
+        shortnames = [x.items[DSheader.name].text() for x in self.contents.values()]
+        if name in dsnames:    obj = root.child(dsnames.index(name)).data(QtCore.Qt.UserRole)
+        if name in shortnames: obj = root.child(shortnames.index(name)).data(QtCore.Qt.UserRole)
+        obj.items[DSheader.type].setText(type)
+        self.updateView.emit()
+ 
+
     def addUserFun(self, name, Yfun):
-        if name in self.contents:return
         root = self.invisibleRootItem()
         shortname = f"UF{self.nrOfUserFuns}"
         self.nrOfUserFuns+=1
-        row = [
-            QtGui.QStandardItem(shortname),
-            QtGui.QStandardItem(f"{name}"),
-            QtGui.QStandardItem(f"{Yfun}"),
-            QtGui.QStandardItem(f""),
-            QtGui.QStandardItem(f""),
-            QtGui.QStandardItem(f""),
-        ]
-        self.appendRow(row)
-        self.contents[name] = DScontainer({}, row)
-        for x in row:
-            x.setData(self.contents[name], QtCore.Qt.UserRole)
+        DScontainer(self, {}, shortname,name,Yfun)
 
 class DScontainer():
-    def __init__(self, attrs, items):
+    def __init__(self, parent, attrs, shortname, name,  Yfun):
         self.attrs = attrs
-        self.items = items
+        self.items = {
+            DSheader.type: QtGui.QStandardItem("xy"),
+            DSheader.idx:  QtGui.QStandardItem(shortname),
+            DSheader.name: QtGui.QStandardItem(name),
+            DSheader.Yfun: QtGui.QStandardItem(Yfun),
+            DSheader.Yax:  QtGui.QStandardItem(f""),
+            DSheader.Xax:  QtGui.QStandardItem(f""),
+            DSheader.Xtrig:QtGui.QStandardItem(f""),
+            }
+        for x in self.items.values():
+             x.setData(self, QtCore.Qt.UserRole)
+        parent.contents[shortname] = self
+        parent.appendRow(list(self.items.values()))
 
 class DSview(QtWidgets.QTreeView):
     def __init__(self):
@@ -360,15 +383,13 @@ class DSview(QtWidgets.QTreeView):
         self.setAlternatingRowColors(True)
         self.setItemDelegate(DSDelegate())
     def resizeColumnsToContents(self):
-        L = len(self.model().header)
+        L = len(DSheader)
         for idx in range(L):
             self.resizeColumnToContents(L-idx-1)
 
     def keyPressEvent(self, event):
         key = event.key()
         modifiers = event.modifiers()
-        #if key == QtCore.Qt.Key_Space:
-        #    self.toggleCurrItemSelected()
         if key >= QtCore.Qt.Key_1 and key <= QtCore.Qt.Key_9:
             nr = int(key - QtCore.Qt.Key_1)+1
             self.toggleYax(nr)
@@ -383,9 +404,16 @@ class DSview(QtWidgets.QTreeView):
 
 class DSDelegate(QtWidgets.QStyledItemDelegate):
     def paint(self, painter, option, index):
-        attrs = index.data(QtCore.Qt.UserRole).attrs
-        if attrs.get("_selected"): option.font.setWeight(QtGui.QFont.Bold)
+        if index.column() > 0:
+            attrs = index.data(QtCore.Qt.UserRole).attrs
+            if attrs.get("_selected"): option.font.setWeight(QtGui.QFont.Bold)
         QtWidgets.QStyledItemDelegate.paint(self, painter, option, index)
+    def createEditor(self, parent, option, index):
+        if index.column() == 0:
+            cb = QtWidgets.QComboBox(parent)
+            cb.addItems(list(app.plugins["plot"].widget.plotbib.plotterDict.keys()))
+            return cb
+        return QtWidgets.QStyledItemDelegate.createEditor(self, parent, option, index)
 
 class ParserRunner(QtCore.QRunnable):
     def __init__(self, parser, parent):

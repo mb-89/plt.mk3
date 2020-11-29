@@ -119,6 +119,7 @@ class Parser(QObject):
 
         if not splits:
             df.attrs["name"] = self.name
+            df.attrs["comments"] = []
             df.attrs["_ts"] = meddiff
             dataframes = [df]
             return dataframes
@@ -129,6 +130,7 @@ class Parser(QObject):
             chunk = df.iloc[start:end,:]
             dataframes.append(chunk)
             chunk.attrs["name"] = self.name+f".{idx}"
+            chunk.attrs["comments"] = []
             chunk.attrs["_ts"] = meddiff
             chunk.index = chunk.index-chunk.index[0]
             idx+=1

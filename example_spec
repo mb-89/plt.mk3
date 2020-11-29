@@ -1,0 +1,12 @@
+data.open(I:/006_projects/plt.examples/spec.csv)
+
+data.selectDF(DF0)
+
+data.addUserFun(speed, DF["speed"])
+data.setYax(speed,2)
+data.setYax(UF0,1)
+
+data.setPlotType(speed,spec)
+data.setPlotType(UF0,fft)
+
+plot.plot()

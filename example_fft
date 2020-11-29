@@ -1,8 +1,0 @@
-data.open(I:/006_projects/plt.examples/spec.csv)
-
-data.selectDF(DF0)
-
-data.setYfun(speed,plots.fft(DF[DS]))
-data.setYax(speed,1)
-
-plot.plot()
