@@ -117,6 +117,8 @@ class Graph():
 
         _L = len(_plotinfo["dfs"])*len(self.dss)
         _cnt = 0
+        _xnames = []
+        _ynames = []
         for _k,_v in _plotinfo["dfs"].items():
             #fill all dataseries attrs with the attrs from the df:
             vars()["DF"] = vars()[_k]
@@ -126,9 +128,6 @@ class Graph():
                     vars()[_k][_k2].attrs[_k3]=_v3
             _scope = vars()
             _builtins = {"math":math, "np":np, "pd":pd, "funs": self.functions.funContainer}
-            _xnames = []
-            _ynames = []
-            
 
             for _ds in self.dss:
                 vars()["DS"] = _ds.items[DSHeader.name].text()

@@ -60,6 +60,7 @@ class Parser(QObject):
         nrOfDataFrames += 1
 
     def reduceColnames(self, df):
+        df.columns = [x.replace("_","/") for x in df.columns]
         cols = list(df.columns)
         
         while True:

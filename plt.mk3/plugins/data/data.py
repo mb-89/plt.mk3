@@ -37,6 +37,8 @@ class Plugin(_P):
         self.DFmodel.updateView.connect(self.widget.DFview.viewport().repaint)
         self.DSmodel.updateView.connect(self.widget.DSview.viewport().repaint)
         self.widget.DFview.fileDropped.connect(lambda x:self.open(x))
+        self.parseResultQueue = []
+        self.busyprocessing = False
 
     @publicFun(guishortcut="Ctrl+o", isAsync = True)
     def open(self, path: str = "") -> int:
@@ -152,11 +154,21 @@ class Plugin(_P):
             for p in parseList: p.run()
 
     def getParserResults(self, dfs):
-        for x in dfs: self.DFmodel.appendRow(self.DFmodel.df2qtRow(x))
-        self.DSmodel.appendColsFromDFs(dfs)
+        self.parseResultQueue.append(dfs)
+        QtCore.QTimer.singleShot(0,self.app.cmdDone.emit)
+        QtCore.QTimer.singleShot(0,self.processNextResult)
+
+    def processNextResult(self):
+        if self.busyprocessing or not self.parseResultQueue:return
+        self.busyprocessing=True
+        nxt = self.parseResultQueue.pop(0)
+        for x in nxt: self.DFmodel.appendRow(self.DFmodel.df2qtRow(x))
+        self.DSmodel.appendColsFromDFs(nxt)
         self.widget.DFview.resizeColumnsToContents()
         self.widget.DSview.resizeColumnsToContents()
-        self.app.cmdDone.emit()
+        self.busyprocessing = False
+        QtCore.QTimer.singleShot(0,self.processNextResult)
+
 
     def getFileParser(self, target):
         for pname, p in self.parsers.items():
@@ -319,7 +331,7 @@ class DSModel(QtGui.QStandardItemModel):
         except:attrs = None
         if attrs is None:
             root = self.invisibleRootItem()
-            shortnames = list(self.contents.keys())
+            shortnames = [x.items[DSheader.idx].text() for x in self.contents.values()]
             dsnames = [x.items[DSheader.name].text() for x in self.contents.values()]
             if nameOrIdx in dsnames:    nameOrIdx = root.child(dsnames.index(nameOrIdx)).data(QtCore.Qt.UserRole)
             if nameOrIdx in shortnames: nameOrIdx = root.child(shortnames.index(nameOrIdx)).data(QtCore.Qt.UserRole)
@@ -337,7 +349,7 @@ class DSModel(QtGui.QStandardItemModel):
         #newval : 0 = off, 1 = on, -1 = toggle (default)
 
         root = self.invisibleRootItem()
-        dsnames = list(self.contents.keys())
+        dsnames = [x.items[DSheader.name].text() for x in self.contents.values()]
         shortnames = [x.items[DSheader.idx].text() for x in self.contents.values()]
         if name in dsnames:    obj = root.child(dsnames.index(name)).data(QtCore.Qt.UserRole)
         if name in shortnames: obj = root.child(shortnames.index(name)).data(QtCore.Qt.UserRole)
@@ -346,7 +358,7 @@ class DSModel(QtGui.QStandardItemModel):
 
     def setPlotType(self, name, type):
         root = self.invisibleRootItem()
-        dsnames = list(self.contents.keys())
+        dsnames = [x.items[DSheader.name].text() for x in self.contents.values()]
         shortnames = [x.items[DSheader.name].text() for x in self.contents.values()]
         if name in dsnames:    obj = root.child(dsnames.index(name)).data(QtCore.Qt.UserRole)
         if name in shortnames: obj = root.child(shortnames.index(name)).data(QtCore.Qt.UserRole)
@@ -363,6 +375,7 @@ class DSModel(QtGui.QStandardItemModel):
 class DScontainer():
     def __init__(self, parent, attrs, shortname, name,  Yfun):
         self.attrs = attrs
+        self.origname = name
         self.items = {
             DSheader.type: QtGui.QStandardItem("xy"),
             DSheader.idx:  QtGui.QStandardItem(shortname),
@@ -374,7 +387,7 @@ class DScontainer():
             }
         for x in self.items.values():
              x.setData(self, QtCore.Qt.UserRole)
-        parent.contents[shortname] = self
+        parent.contents[self.origname] = self
         parent.appendRow(list(self.items.values()))
 
 class DSview(QtWidgets.QTreeView):
