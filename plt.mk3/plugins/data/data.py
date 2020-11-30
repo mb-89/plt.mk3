@@ -45,7 +45,7 @@ class Plugin(_P):
         """
         if not path: 
             path = QtWidgets.QFileDialog.getOpenFileNames()
-            path = path[0]
+            path = path[0][0]
         if not path: return -1
         self.parse([path])
         return 0
@@ -136,7 +136,7 @@ class Plugin(_P):
             else:
                 self.app.log.warning(f"{target} skipped ({errmsg}).")
                 if target.endswith(".csv"):
-                    self.app.log.warning("Remember: to parse csv files, the first line of the file must contain format information")
+                    self.app.log.warning("Remember: to parse csv files on the fly, the first line of the file must contain format information")
                     self.app.log.warning('Example format line:')
                     self.app.log.warning('#format:{"sep":",", "header":[0,1], "skiprows":1}')
                     self.app.log.warning('see also: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_csv.html')

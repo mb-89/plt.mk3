@@ -98,6 +98,8 @@ class Parser(QObject):
             df.set_index("Time_s",inplace=True)
         elif "Time_s" in df:
             df.set_index("Time_s",inplace=True)
+        elif "Time" in df:
+            df.set_index("Time",inplace=True)
         return df
 
     def putConstColsInMetaData(self, df):

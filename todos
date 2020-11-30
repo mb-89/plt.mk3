@@ -1,2 +1,3 @@
-Add "type" col to DSs. The first typecol for each plot will take precedence. Should be a dropdown in the gui and have a "setPlotType" function.
+[done] Add "type" col to DSs. The first typecol for each plot will take precedence. Should be a dropdown in the gui and have a "setPlotType" function.
+add csv parser automode and popup
 Add Argument popups to cmd.
