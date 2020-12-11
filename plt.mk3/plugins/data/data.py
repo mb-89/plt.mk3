@@ -12,6 +12,9 @@ from .parsers import *
 import time
 import itertools
 import enum
+import tempfile
+import subprocess
+import glob
 
 class DSheader(enum.Enum):
     type = 0,
@@ -23,6 +26,8 @@ class DSheader(enum.Enum):
     Xtrig = 6
 
 app = None
+
+PATH_7Z = "C:\\Program Files\\7-Zip\\7z.exe"
 
 class Plugin(_P):
     def __init__(self, app_in):
@@ -128,6 +133,14 @@ class Plugin(_P):
         #bc some parsers might remove multiple entries:
         while fileList:
             target = fileList[0]
+
+            if target.endswith(".7z"):
+                self.tempdir = tempfile.TemporaryDirectory()
+                line = f'"{PATH_7Z}" x {target} -o"{self.tempdir.name}"'
+                result=subprocess.run(line,capture_output=True)
+                filesublist = [x for x in glob.glob(self.tempdir.name+"/*.*") if op.isfile(x)]
+                self.parse(filesublist)
+            
             parser, errmsg = self.getFileParser(target)
             if parser:
                 for rf in parser.reservedFiles:

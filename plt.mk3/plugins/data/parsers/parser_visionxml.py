@@ -7,11 +7,10 @@ import os.path as op
 class Parser(_P):
     def __init__(self, path, app):
         super().__init__(path, app)
-        #we only recognize csvs with "#format:{format json}" as the first line.
         if not op.isfile(path):return
         if not path.endswith(".xml"):return
         rootxml = etree.parse(path).getroot()
-        isVisionXML = rootxml.tag == "DataSet"
+        isVisionXML = (rootxml.tag == "DataSet") or (rootxml.tag == "DataMatrix")
         if not isVisionXML:return
         self.path = path
         self.recognized = True
@@ -118,5 +117,5 @@ class Parser(_P):
             recordchild = etree.SubElement(chxml, "RecordRef")
             recordchild.text = ch.find("RecordRef").text
             xml.remove(ch)
-            chxml.tag = namechild.text
+            chxml.tag = namechild.text.replace(" ","")
             xml.append(chxml)

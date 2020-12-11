@@ -84,23 +84,25 @@ class Parser(QObject):
 
     def convertTime2SecFn(self, df):
         #classic timestamp (days since 1900)
-        if "Time_DateTime" in df:
-            timecol = "Time_DateTime"
+        if "Time/DateTime" in df:
+            timecol = "Time/DateTime"
             df[timecol] = df[timecol] - df[timecol].iloc[0]
             df[timecol] = df[timecol] *60.0*60.0*24.0
-            df.rename(columns={'Time_DateTime': 'Time_s'},inplace=True)
-            df.set_index("Time_s",inplace=True)
+            df.rename(columns={'Time/DateTime': 'Time/s'},inplace=True)
+            df.set_index("Time/s",inplace=True)
         #rt_time
-        elif "RT/Time_DateTime" in df:
-            timecol = "RT/Time_DateTime"
+        elif "RT/Time/DateTime" in df:
+            timecol = "RT/Time/DateTime"
             df[timecol] = df[timecol] - df[timecol].iloc[0]
             df[timecol] = df[timecol] *60.0*60.0*24.0
-            df.rename(columns={'RT/Time_DateTime': 'Time_s'},inplace=True)
-            df.set_index("Time_s",inplace=True)
-        elif "Time_s" in df:
-            df.set_index("Time_s",inplace=True)
+            df.rename(columns={'RT/Time/DateTime': 'Time/s'},inplace=True)
+            df.set_index("Time/s",inplace=True)
+        elif "Time/s" in df:
+            df.set_index("Time/s",inplace=True)
         elif "Time" in df:
             df.set_index("Time",inplace=True)
+        if not df.index.is_monotonic:
+            df.sort_index(inplace=True)
         return df
 
     def putConstColsInMetaData(self, df):
