@@ -1,6 +1,6 @@
 from .__parser__ import Parser as _P
 import os.path as op
-from scapy.all import rdpcap,IP,TCP,UDP,Raw
+#from scapy.all import rdpcap,IP,TCP,UDP,Raw
 import pandas as pd
 
 class Parser(_P):
