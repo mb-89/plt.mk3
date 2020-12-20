@@ -8,15 +8,19 @@ import io
 import configparser
 
 KNOWNCSVFORMATS = [
-    {"sep":";", "header":[0], "skiprows":0} #Triggered logger fmt
+    #{"sep":";", "header":[0], "skiprows":0} #Triggered logger fmt
 ]
 
 class Parser(_P):
     def __init__(self, path, app):
         super().__init__(path, app)
+        self.recognized = False
         #we only recognize csvs with "#format:{format json}" as the first line on the fly.
         if not op.isfile(path):return
-        firstline = open(path,"r").readline()
+        try:
+            firstline = open(path,"r").readline()
+        except:
+            return
         if not firstline.startswith("#format:"):dct=None
         firstline = firstline.replace("#format:{","{")
         try: dct = json.loads(firstline)

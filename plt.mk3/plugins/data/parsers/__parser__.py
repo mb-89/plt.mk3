@@ -28,7 +28,7 @@ class Parser(QObject):
         self.app.log.error("parser not implemented")
         self.done.emit(dflist)
 
-    def postprocess(self, dfList):
+    def postprocess(self, dfList, disableChunks=False):
         """
         Here, we recv the dfs produced by the parsers and apply some common post processing, 
         like trying to find the time column and convert it to seconds, 
@@ -36,7 +36,7 @@ class Parser(QObject):
         """
         dfList = [self.reduceColnames(x) for x in dfList]
         dfList = [self.convertTime2SecFn(x) for x in dfList]
-        dfList = [item for sublist in [self.mkchunks(x) for x in dfList] for item in sublist] #flattened list of lists
+        dfList = [item for sublist in [self.mkchunks(x, disableChunks) for x in dfList] for item in sublist] #flattened list of lists
         dfList = [self.putConstColsInMetaData(x) for x in dfList]
         dfList = [self.addParentRefToCols(x) for x in dfList]
         for df in dfList: 
@@ -101,6 +101,9 @@ class Parser(QObject):
             df.set_index("Time/s",inplace=True)
         elif "Time" in df:
             df.set_index("Time",inplace=True)
+        elif "time/ms" in df:
+            df.set_index("time/ms",inplace=True)
+            df.index*=1e-3
         if not df.index.is_monotonic:
             df.sort_index(inplace=True)
         return df
@@ -114,13 +117,14 @@ class Parser(QObject):
             df.drop(columns=[cc], inplace=True)
         return df
 
-    def mkchunks(self,df):
+    def mkchunks(self,df,disableChunks=False):
         dataframes = []
         dfdiff = diff(df.index)
         meddiff = median(dfdiff)
         splits = []
-        for idx,x in enumerate(dfdiff): 
-            if x>5.0*meddiff: splits.append(idx+1)
+        if not disableChunks:
+            for idx,x in enumerate(dfdiff): 
+                if x>5.0*meddiff: splits.append(idx+1)
 
         if not splits:
             df.attrs["name"] = self.name
