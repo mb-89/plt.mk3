@@ -5,6 +5,8 @@ from scipy import fft
 import numpy as np
 from PySide2 import QtCore,QtWidgets,QtGui
 import pandas as pd
+from scipy import signal
+from pyqtgraph import functions as fn
 
 class Plotter(_P):
     def getPlot(self, X, Y, Xnames, Ynames, plotinfo, selectedSeries, sharedCoords):
@@ -16,6 +18,7 @@ class SubPlot(_SP):
     def __init__(self, xdata, ydata, xnames, ynames, sharedCoords):
         super().__init__(xdata, ydata, xnames, ynames, sharedCoords)
         self.df = pd.DataFrame()
+        self.plt = self.addPlot(row=1,col=0)
         self.addWidgets()
         self.lines = {}
 
@@ -28,7 +31,6 @@ class SubPlot(_SP):
             xyname2s(X,Y,yname).to_frame() for idx,(X,Y,yname) in enumerate(zip(xdata,ydata,ynames))
         ],axis=1))
 
-        self.plt = self.addPlot(row=1,col=0)
         self.plt.addLegend()
         L = len(self.df.columns)
 
@@ -36,12 +38,18 @@ class SubPlot(_SP):
             self.lines[colname] = self.plt.plot(y=self.df[colname],x=self.df[colname].index,pen=(idx,L),name=colname)
 
         self.plt.setLabels(left=" / ".join(sorted(list(set(x[0] for x in ynames)))), bottom = " / ".join(sorted(list(set(xnames)))))
-        self.plt.showGrid(x=True,y=True,alpha=0.3)
+        self.plt.showGrid(x=True,y=True,alpha=1)
+        self.plt._mousePressEvent=self.plt.mousePressEvent
+        self.plt.mousePressEvent = self.PltMousePressEvent
+        
         #,, name = f'{_ynames[_ydata.name]} @ {_k}')
         #      _cnt+=1
         if sharedCoords:
             self.plt.setXLink(sharedCoords[0])
         sharedCoords.append(self.plt)
+
+    def PltMousePressEvent(self, e):
+        self.plt._mousePressEvent(e)
 
     def addWidgets(self):
         C = QtWidgets.QGraphicsProxyWidget()
@@ -56,19 +64,22 @@ class SubPlot(_SP):
         L.setSpacing(0)
         L.setContentsMargins(0,0,0,0)
         LL.addLayout(L)
-        
-        addonList = [
+        W.setLayout(LL)
+        C.setWidget(W)
+        self.addItem(C,col=0)
+
+        addons = [
+            self.buildCursorWidgets,
             self.buildFFTWidgets,
-            self.buildCursorWidgets
+            self.buildSpecWidgets
         ]
-        for a in addonList:
+
+        for a in addons:
             Cursorbutton, CursorWidgetAndRow = a()
             if Cursorbutton:        L.addWidget(Cursorbutton)
             if CursorWidgetAndRow:  LL.addWidget(CursorWidgetAndRow[0], row = CursorWidgetAndRow[1],col=0)
 
-        W.setLayout(LL)
-        C.setWidget(W)
-        self.addItem(C,col=0)
+
 
     def updateData(self, data):
         self.df = data
@@ -209,3 +220,186 @@ class SubPlot(_SP):
             yf = 2.0/N * np.abs(fft.fft(Y)[0:N//2])
             xf = np.linspace(0.0, 1.0/(2.0*T),N//2)
             self.FFT.plot(x=xf[1:],y=yf[1:],pen=(idx,L))
+
+    def buildSpecWidgets(self):
+        self.spec = Spec(self,3,0)
+        return self.spec.toggleButton, None
+
+class Spec(QtCore.QObject):
+    def __init__(self, parent, row, col):
+        super().__init__()
+        self.parent = parent
+        L = self.parent.addLayout(row=row,col=col)
+
+        #fplt
+        self.fplt = L.addPlot(row=0,col=0,colspan=2)
+        self.fplt.addLegend()
+        self.fplt.showGrid(x=True,y=True,alpha=0.3)
+
+        #hist
+        hist = HoriHist()
+        L.addItem(hist,row=1,col=0,rowspan=1)
+        self.hist = hist
+
+        #rest (wrapped in a proxy)
+        self.windowLenRel = 4
+        self.windowOverlapRel = 4
+        self.windowLenBase = 256
+
+        C = QtWidgets.QGraphicsProxyWidget()
+        W = QtWidgets.QWidget()
+        W.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        W.setAttribute(QtCore.Qt.WA_NoSystemBackground)
+        C.setWidget(W)
+        L.addItem(C,row=1,col=1,rowspan=1)
+
+
+        B = QtWidgets.QPushButton("Spec")
+        B.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        B.setStyleSheet(f"QPushButton{{{self.parent.transparentstyle}}}")
+        B.clicked.connect(self.toggle)
+        self.toggleButton = B
+        self.container = L
+        L.setVisible(False)
+
+        self.initplt()
+
+    def initplt(self):
+        img = pg.ImageItem()
+        img.setOpts(axisOrder='row-major')
+        self.img = img
+        self.hist.setImageItem(img)
+        self.fplt.addItem(img)
+
+        self.fplt.showGrid(True,True,1)
+        self.fplt.setXLink(self.parent.plt)
+
+    def calc(self):
+        col = self.parent.df.columns[0]
+        Y=self.parent.df[col].values
+        T=self.parent.df.index.values
+        L = len(T)
+        WL = int(self.windowLenBase*self.windowLenRel)
+        self.f, self.t, self.Sxx = signal.spectrogram(
+                Y, 
+                1/((T[-1]-T[0])/L),
+                scaling = 'spectrum',
+                mode='magnitude',
+                nperseg= WL,
+                noverlap=int(WL/8*self.windowOverlapRel))
+        self.Sxx*=2.0
+
+    def update(self):
+        self.calc()
+        # Sxx contains the amplitude for each pixel
+        self.img.setImage(self.Sxx)
+
+        # Scale the X and Y Axis to time and frequency (standard is pixels)
+        self.img.resetTransform()
+        self.img.scale(self.t[-1]/np.size(self.Sxx, axis=1),
+                self.f[-1]/np.size(self.Sxx, axis=0))
+        self.hist.setLevels(np.min(self.Sxx), np.percentile(self.Sxx,97))
+    
+        #self.hist.gradient.restoreState(
+        #        {'mode': 'rgb',
+        #        'ticks': [(0.8, (0, 182, 188, 255)),
+        #                (1.0, (246, 111, 0, 255)),
+        #                (0.0, (75, 0, 113, 255))]})
+    
+        # Limit panning/zooming to the spectrogram
+        t1 = self.parent.df.index[-1]
+        t0 = self.parent.df.index[0]
+        freq = len(self.parent.df.index)/(t1-t0)
+        self.fplt.setLimits(yMin=0, yMax=freq/2.0)
+        for x in self.fplt.axes:
+            ax = self.fplt.getAxis(x)
+            ax.setZValue(1)
+
+        col = self.parent.df.columns[0]
+        self.fplt.setLabels(left=f"ℱ{{{col}}}", bottom=self.parent.plt.axes["bottom"]["item"].label.toPlainText())
+
+    def toggle(self):
+        hidden = not self.container.isVisible()
+        if hidden: 
+            self.hist.imageChanged()
+            self.update()
+        self.container.setVisible(hidden)
+
+class HoriHist(pg.HistogramLUTItem):
+    def __init__(self, image=None, fillHistogram=True, rgbHistogram=False, levelMode='mono'):
+        pg.GraphicsWidget.__init__(self)
+        self.lut = None
+        self.imageItem = lambda: None  # fake a dead weakref
+        self.levelMode = levelMode
+        self.rgbHistogram = rgbHistogram
+        
+        self.layout = QtGui.QGraphicsGridLayout()
+        self.setLayout(self.layout)
+        self.layout.setContentsMargins(1,1,1,1)
+        self.layout.setSpacing(0)
+        self.vb = pg.ViewBox(parent=self)
+        self.vb.setMaximumHeight(152)
+        self.vb.setMinimumHeight(45)
+        self.vb.setMouseEnabled(x=False, y=True)
+
+        self.gradient = pg.GradientEditorItem()
+        self.gradient.setOrientation('top')
+        self.gradient.loadPreset('viridis')
+
+        self.gradient.setFlag(self.gradient.ItemStacksBehindParent)
+        self.vb.setFlag(self.gradient.ItemStacksBehindParent)
+        self.layout.addItem(self.gradient, 0, 0)
+        self.layout.addItem(self.vb, 1, 0)
+        self.axis = pg.AxisItem('bottom', linkView=self.vb, maxTickLength=-10, parent=self)
+        self.layout.addItem(self.axis, 2, 0)
+
+        self.regions = [
+            pg.LinearRegionItem([0, 1], 'vertical', swapMode='block'),
+            #we dont need those here
+            #pg.LinearRegionItem([0, 1], 'vertical', swapMode='block', pen='r',brush=fn.mkBrush((255, 50, 50, 50)), span=(0., 1/3.)),
+            #pg.LinearRegionItem([0, 1], 'vertical', swapMode='block', pen='g',brush=fn.mkBrush((50, 255, 50, 50)), span=(1/3., 2/3.)),
+            #pg.LinearRegionItem([0, 1], 'vertical', swapMode='block', pen='b',brush=fn.mkBrush((50, 50, 255, 80)), span=(2/3., 1.)),
+            #pg.LinearRegionItem([0, 1], 'vertical', swapMode='block', pen='w',brush=fn.mkBrush((255, 255, 255, 50)), span=(2/3., 1.))
+            ]
+        for region in self.regions:
+            region.setZValue(1000)
+            self.vb.addItem(region)
+            region.lines[0].addMarker('<|', 0.5)
+            region.lines[1].addMarker('|>', 0.5)
+            region.sigRegionChanged.connect(self.regionChanging)
+            region.sigRegionChangeFinished.connect(self.regionChanged)
+        self.region = self.regions[0]
+
+        add = QtGui.QPainter.CompositionMode_Plus
+        self.plots = [
+            pg.PlotCurveItem(pen=(200, 200, 200, 100)),  # mono
+            pg.PlotCurveItem(pen=(255, 0, 0, 100), compositionMode=add),  # r
+            pg.PlotCurveItem(pen=(0, 255, 0, 100), compositionMode=add),  # g
+            pg.PlotCurveItem(pen=(0, 0, 255, 100), compositionMode=add),  # b
+            pg.PlotCurveItem(pen=(200, 200, 200, 100), compositionMode=add),  # a
+            ]
+        self.plot = self.plots[0]
+        for plot in self.plots:
+            self.vb.addItem(plot)
+        self.fillHistogram(fillHistogram)
+
+        self.range = None
+        self.gradient.sigGradientChanged.connect(self.gradientChanged)
+        self.vb.sigRangeChanged.connect(self.viewRangeChanged)
+
+    def paint(self, p, *args):
+        if self.levelMode != 'mono':
+            return
+        
+        pen = self.region.lines[0].pen
+        rgn = self.getLevels()
+        p1 = self.vb.mapFromViewToItem(self, pg.Point(rgn[0],self.vb.viewRect().center().y()))
+        p2 = self.vb.mapFromViewToItem(self, pg.Point(rgn[1],self.vb.viewRect().center().y()))
+        gradRect = self.gradient.mapRectToParent(self.gradient.gradRect.rect())
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        for pen in [fn.mkPen((0, 0, 0, 100), width=3), pen]:
+            p.setPen(pen)
+            p.drawLine(p1 - pg.Point(5, 0), gradRect.bottomLeft())
+            p.drawLine(p2 + pg.Point(5, 0), gradRect.bottomRight())
+            p.drawLine(gradRect.topLeft(), gradRect.bottomLeft())
+            p.drawLine(gradRect.topRight(), gradRect.bottomRight())
