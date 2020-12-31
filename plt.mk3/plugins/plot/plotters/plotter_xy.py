@@ -26,7 +26,6 @@ class SubPlot(_SP):
             comments = " / ".join(Y.attrs.get("comments",[]))
             nameAndComments = f"{yname[0]} {comments} @ {yname[1]}"
             return pd.Series(Y,index=X,name=nameAndComments)
-
         self.updateData(pd.concat([
             xyname2s(X,Y,yname).to_frame() for idx,(X,Y,yname) in enumerate(zip(xdata,ydata,ynames))
         ],axis=1))
@@ -39,8 +38,8 @@ class SubPlot(_SP):
 
         self.plt.setLabels(left=" / ".join(sorted(list(set(x[0] for x in ynames)))), bottom = " / ".join(sorted(list(set(xnames)))))
         self.plt.showGrid(x=True,y=True,alpha=1)
-        self.plt._mousePressEvent=self.plt.mousePressEvent
-        self.plt.mousePressEvent = self.PltMousePressEvent
+        #self.plt._mousePressEvent=self.plt.mousePressEvent
+        #self.plt.mousePressEvent = self.PltMousePressEvent
         
         #,, name = f'{_ynames[_ydata.name]} @ {_k}')
         #      _cnt+=1
@@ -68,105 +67,19 @@ class SubPlot(_SP):
         C.setWidget(W)
         self.addItem(C,col=0)
 
-        addons = [
-            self.buildCursorWidgets,
-            self.buildFFTWidgets,
-            self.buildSpecWidgets
-        ]
+        self.addons = dict((x.name,x(self)) for x in [
+            Addon_cursors,
+            Addon_FFT,
+            Addon_spec
+        ])
 
-        for a in addons:
-            Cursorbutton, CursorWidgetAndRow = a()
-            if Cursorbutton:        L.addWidget(Cursorbutton)
-            if CursorWidgetAndRow:  LL.addWidget(CursorWidgetAndRow[0], row = CursorWidgetAndRow[1],col=0)
-
-
+        for a in self.addons.values():
+            L.addWidget(a.button)
+            LL.addWidget(a.content, row = a.row)
+            a.fillContent()
 
     def updateData(self, data):
         self.df = data
-    
-    def buildCursorWidgets(self):
-        B = QtWidgets.QPushButton("C")
-        B.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        B.setStyleSheet(f"QPushButton{{{self.transparentstyle}}}")
-
-        P = QtWidgets.QTreeView()
-        P.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        P.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        P.setStyleSheet("""
-        QTreeView{background-color:transparent;color:#969696}
-        QTreeView::section{background-color: transparent;color:#969696}
-        QHeaderView{background-color: transparent;color:#969696}
-        QHeaderView::section{background-color: transparent;color:#969696}""")
-
-        self.cursorPanel=P
-        self.cursorPanel.setVisible(False)
-        B.clicked.connect(self.toggleCursorWidgets)
-        return B, (P,0)
-
-    def toggleCursorWidgets(self):
-        hidden = self.cursorPanel.isHidden()
-
-        try: vL1 = self.plt.vL1
-        except AttributeError:
-            vL1 = pg.InfiniteLine(angle=90, movable=True)
-            vL2 = pg.InfiniteLine(angle=90, movable=True)
-            self.plt.addItem(vL1, ignoreBounds=True)
-            self.plt.addItem(vL2, ignoreBounds=True)
-            self.plt.vL1 = vL1
-            self.plt.vL2 = vL2
-            vL1.sigPositionChanged.connect(self.updateCursorData)
-            vL2.sigPositionChanged.connect(self.updateCursorData)
-        vL2 = self.plt.vL2
-
-        #now, we know vl1 and vl2.
-        vL1.setVisible(hidden)
-        vL2.setVisible(hidden)
-        if hidden:self.updateCursorData()
-
-        self.cursorPanel.setVisible(hidden)
-
-    def updateCursorData(self):
-        mdl = self.cursorPanel.model()
-        if mdl: mdl.clear()
-        if not mdl:
-            try:xlabel = self.df.index.name
-            except: return
-            mdl = QtGui.QStandardItemModel()
-            self.cursorPanel.setModel(mdl)
-            self.cursorPanel.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-
-        headernames = ["", self.df.index.name]+[x for x in self.df.columns]
-        L = len(headernames)
-        mdl.setHorizontalHeaderLabels(headernames)
-        mdl.setColumnCount(L)
-        xheadernames = ["@1","@2","Δ","1/Δ"]
-        self.cursorPanel.setMaximumHeight(20*len(xheadernames)+30)
-        vL1 = self.plt.vL1
-        vL2 = self.plt.vL2
-        X1 = vL1.value()
-        X2 = vL2.value()
-        X1vals = self.df.iloc[np.argmin(abs(self.df.index.values-X1))]
-        X2vals = self.df.iloc[np.argmin(abs(self.df.index.values-X2))]
-        deltavals = [x2-x1 for x1,x2 in zip(X1vals,X2vals)]
-        freqvals = []
-        for x in deltavals:
-            try:freqvals.append(1.0/x)
-            except:freqvals.append(0)
-        try:freq = 1.0/(X2-X1)
-        except: freq=0
-        vals = [
-            [str(X1)]+[str(x) for x in X1vals],#these are the values at 1
-            [str(X2)]+[str(x) for x in X1vals],#these are the values at 2
-            [str(X2-X1)]+[str(x) for x in deltavals],#these are the deltas
-            [str(freq)]+[str(x) for x in freqvals],#these are the 1/deltas
-        ]
-        for rowidx,name in enumerate(xheadernames):
-            row = [name]
-            for col in range(L-1):
-                row.append(vals[rowidx][col])
-            mdl.appendRow([QtGui.QStandardItem(x) for x in row])
-        for idx in range(L):
-            self.cursorPanel.resizeColumnToContents(L-1-idx)
 
     def buildFFTWidgets(self):
         B = QtWidgets.QPushButton("FFT")
@@ -221,12 +134,120 @@ class SubPlot(_SP):
             xf = np.linspace(0.0, 1.0/(2.0*T),N//2)
             self.FFT.plot(x=xf[1:],y=yf[1:],pen=(idx,L))
 
-    def buildSpecWidgets(self):
-        self.spec = Spec(self,3,0)
-        return self.spec.toggleButton, None
+class Addon(QtCore.QObject):
+    name = "Addon"
+    row = 0
+    transparentstyle="background: transparent;color:#969696;border-color: #969696;border-width: 1px;border-style: solid;min-width: 3em;"
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+        self.content = QtWidgets.QTreeView()
+        self.button = QtWidgets.QPushButton(self.name)
+        self.button.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.button.setStyleSheet(f"QPushButton{{{self.transparentstyle}}}")
+        self.button.clicked.connect(self.toggle)
+        self.content.setVisible(False)
+
+    def fillContent(self):
+        pass
+
+    def toggle(self):
+        pass
+
+class Addon_cursors(Addon):
+    name = "Cursors"
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        view = self.content
+        view.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        view.setAttribute(QtCore.Qt.WA_NoSystemBackground)
+        view.setStyleSheet("""
+        QTreeView{background-color:transparent;color:#969696}
+        QTreeView::section{background-color: transparent;color:#969696}
+        QHeaderView{background-color: transparent;color:#969696}
+        QHeaderView::section{background-color: transparent;color:#969696}""")
+
+        self.view=view
+
+    def toggle(self):
+        hidden = not self.content.isVisible()
+
+        try: vL1 = self.parent.plt.vL1
+        except AttributeError:
+            vL1 = pg.InfiniteLine(angle=90, movable=True)
+            vL2 = pg.InfiniteLine(angle=90, movable=True)
+            self.parent.plt.addItem(vL1, ignoreBounds=True)
+            self.parent.plt.addItem(vL2, ignoreBounds=True)
+            self.parent.plt.vL1 = vL1
+            self.parent.plt.vL2 = vL2
+            vL1.sigPositionChangeFinished.connect(self.updateCursors)
+            vL2.sigPositionChangeFinished.connect(self.updateCursors)
+        vL2 = self.parent.plt.vL2
+
+        #now, we know vl1 and vl2.
+        vL1.setVisible(hidden)
+        vL2.setVisible(hidden)
+        if hidden:self.updateCursors()
+
+        self.content.setVisible(hidden)
+
+    def updateCursors(self):
+        print("bla")
+        df = self.parent.df
+        try:mdl=self.view.model().sourceModel()
+        except:
+            try:xlabel = df.index.name
+            except: return
+            fltmdl = QtCore.QSortFilterProxyModel()
+            mdl = QtGui.QStandardItemModel()
+            fltmdl.setSourceModel(mdl)
+            self.view.setModel(fltmdl)
+            self.view.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        mdl.clear()
+
+        headernames = ["", df.index.name]+[x for x in df.columns]
+        L = len(headernames)
+        mdl.setHorizontalHeaderLabels(headernames)
+        mdl.setColumnCount(L)
+        xheadernames = ["@1","@2","Δ","1/Δ"]
+        self.view.setMaximumHeight(20*len(xheadernames)+30)
+        
+        vL1 = self.parent.plt.vL1
+        vL2 = self.parent.plt.vL2
+        X1 = vL1.value()
+        X2 = vL2.value()
+        X1vals = df.iloc[np.argmin(abs(df.index.values-X1))]
+        X2vals = df.iloc[np.argmin(abs(df.index.values-X2))]
+        deltavals = [x2-x1 for x1,x2 in zip(X1vals,X2vals)]
+        freqvals = []
+        for x in deltavals:
+            try:freqvals.append(1.0/x)
+            except:freqvals.append(0)
+        try:freq = 1.0/(X2-X1)
+        except: freq=0
+        vals = [
+            [str(X1)]+[str(x) for x in X1vals],#these are the values at 1
+            [str(X2)]+[str(x) for x in X1vals],#these are the values at 2
+            [str(X2-X1)]+[str(x) for x in deltavals],#these are the deltas
+            [str(freq)]+[str(x) for x in freqvals],#these are the 1/deltas
+        ]
+        for rowidx,name in enumerate(xheadernames):
+            row = [name]
+            for col in range(L-1):
+                row.append(vals[rowidx][col])
+            mdl.appendRow([QtGui.QStandardItem(x) for x in row])
+        for idx in range(L):
+            self.view.resizeColumnToContents(L-1-idx)
+        self.view.model().invalidate()
+        print("blubb")
+class Addon_FFT(Addon):
+    name = "FFT"
+class Addon_spec(Addon):
+    name = "Spec"
 
 class Spec(QtCore.QObject):
-    def __init__(self, parent, row, col):
+    def __init__(self, parent, row, col=0):
         super().__init__()
         self.parent = parent
         L = self.parent.addLayout(row=row,col=col)
@@ -324,7 +345,6 @@ class Spec(QtCore.QObject):
             self.hist.imageChanged()
             self.update()
         self.container.setVisible(hidden)
-
 class HoriHist(pg.HistogramLUTItem):
     def __init__(self, image=None, fillHistogram=True, rgbHistogram=False, levelMode='mono'):
         pg.GraphicsWidget.__init__(self)
