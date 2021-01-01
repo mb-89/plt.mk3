@@ -7,6 +7,7 @@ import plugins
 import importlib
 import inspect
 from functools import partial
+import traceback
 
 class App(QtWidgets.QApplication):
     cmdDone = QtCore.Signal()
@@ -95,7 +96,9 @@ class FunShortcut(QtCore.QObject):
             else:
                 self.fn()
         except Exception as e:
-            self.app.log.error(e)
+            tb = traceback.format_exc().split("\n")
+            for x in tb:
+                self.app.log.error(x)
 
     def getDescr(self):
         descr = inspect.getdoc(self.fn)

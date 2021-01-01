@@ -7,123 +7,147 @@ from PySide2 import QtCore,QtWidgets,QtGui
 import pandas as pd
 from scipy import signal
 from pyqtgraph import functions as fn
+from functools import partial
+
 
 class Plotter(_P):
     def getPlot(self, X, Y, Xnames, Ynames, plotinfo, selectedSeries, sharedCoords):
         return SubPlot(X,Y,Xnames,Ynames,sharedCoords) 
 
 class SubPlot(_SP):
-    transparentstyle="background: transparent;color:#969696;border-color: #969696;border-width: 1px;border-style: solid;min-width: 3em;"
-
     def __init__(self, xdata, ydata, xnames, ynames, sharedCoords):
         super().__init__(xdata, ydata, xnames, ynames, sharedCoords)
-        self.df = pd.DataFrame()
-        self.plt = self.addPlot(row=1,col=0)
-        self.addWidgets()
-        self.lines = {}
+        
+        addonList = [Addon_Buttons, Addon_meas, Addon_xy, Addon_fft, Addon_spec]
+        self.addons = dict( (x.name,x(self)) for x in addonList)
 
-        def xyname2s(X,Y,yname):
-            comments = " / ".join(Y.attrs.get("comments",[]))
-            nameAndComments = f"{yname[0]} {comments} @ {yname[1]}"
-            return pd.Series(Y,index=X,name=nameAndComments)
-        self.updateData(pd.concat([
-            xyname2s(X,Y,yname).to_frame() for idx,(X,Y,yname) in enumerate(zip(xdata,ydata,ynames))
-        ],axis=1))
+        for k,v in self.addons.items():self.addRowColList(v.getGuiElements())
+        for k,v in self.addons.items():v.resolveConnections()
 
-        self.plt.addLegend()
-        L = len(self.df.columns)
+class Addon(QtCore.QObject):
+    name = "Addon"
+    row = 0
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
 
-        for idx,colname in enumerate(self.df.columns):
-            self.lines[colname] = self.plt.plot(y=self.df[colname],x=self.df[colname].index,pen=(idx,L),name=colname)
+    def toggle(self):
+        pass
 
-        self.plt.setLabels(left=" / ".join(sorted(list(set(x[0] for x in ynames)))), bottom = " / ".join(sorted(list(set(xnames)))))
+    def getGuiElements(self):
+        return []
+
+    def resolveConnections(self):
+        pass
+
+    def updateData(self,data):
+        pass
+
+class Addon_Buttons(Addon):
+    name = "buttons"
+    def __init__(self, parent):
+        super().__init__(parent)
+        buttonnames = ["meas","xy","fft","spec","xcor"]
+        self.buttons = dict( (x,QtWidgets.QPushButton(x)) for x in buttonnames )
+        for k,v in self.buttons.items():
+            v.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+            v.setStyleSheet(f"QPushButton{{{self.parent.style}}}")
+    
+    def getGuiElements(self):
+        return list(self.buttons.values())
+
+class Addon_xy(Addon):
+    name = "xy"
+    startHidden = False
+    shareCoords = True
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.plt = pg.PlotItem()
+        self.plt.setVisible(not self.startHidden)
+        self.plt.setLabels(left=" / ".join(sorted(list(set(x[0] for x in self.parent.ynames)))), bottom = " / ".join(sorted(list(set(self.parent.xnames)))))
         self.plt.showGrid(x=True,y=True,alpha=1)
-        #self.plt._mousePressEvent=self.plt.mousePressEvent
-        #self.plt.mousePressEvent = self.PltMousePressEvent
-        
-        #,, name = f'{_ynames[_ydata.name]} @ {_k}')
-        #      _cnt+=1
-        if sharedCoords:
-            self.plt.setXLink(sharedCoords[0])
-        sharedCoords.append(self.plt)
+        if self.shareCoords:
+            if self.parent.sharedCoords:
+                self.plt.setXLink(self.parent.sharedCoords[0])
+            self.parent.sharedCoords.append(self.plt)
 
-    def PltMousePressEvent(self, e):
-        self.plt._mousePressEvent(e)
+    def getGuiElements(self):
+        return [self.plt]
 
-    def addWidgets(self):
-        C = QtWidgets.QGraphicsProxyWidget()
-        W = QtWidgets.QWidget()
-        W.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        W.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        LL=QtWidgets.QVBoxLayout()
-        LL.setSpacing(2)
-        LL.setContentsMargins(0,0,0,0)
-        L = QtWidgets.QHBoxLayout()
-        L.addItem(QtWidgets.QSpacerItem(10,10,QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding))
-        L.setSpacing(0)
-        L.setContentsMargins(0,0,0,0)
-        LL.addLayout(L)
-        W.setLayout(LL)
-        C.setWidget(W)
-        self.addItem(C,col=0)
+    def resolveConnections(self):
+        self.parent.addons["buttons"].buttons[self.name].clicked.connect(self.toggle)
 
-        self.addons = dict((x.name,x(self)) for x in [
-            Addon_cursors,
-            Addon_FFT,
-            Addon_spec
-        ])
+    def toggle(self):
+        hidden = not self.plt.isVisible()
+        self.plt.setVisible(hidden)
 
-        for a in self.addons.values():
-            L.addWidget(a.button)
-            LL.addWidget(a.content, row = a.row)
-            a.fillContent()
+    def updateData(self, df):
+        self.plt.clearPlots()
+        self.plt.addLegend()
+        L = len(df.columns)
 
-    def updateData(self, data):
-        self.df = data
+        for idx,colname in enumerate(df.columns):
+            self.parent.lines[colname] = self.plt.plot(y=df[colname],x=df[colname].index,pen=(idx,L),name=colname)
 
-    def buildFFTWidgets(self):
-        B = QtWidgets.QPushButton("FFT")
-        B.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        B.setStyleSheet(f"QPushButton{{{self.transparentstyle}}}")
+class Addon_fft(Addon_xy):
+    name = "fft"
+    startHidden = True
+    shareCoords = False
 
-        FFT = self.addPlot(col=0,row=2)
-        FFT.addLegend()
-        FFT.showGrid(x=True,y=True,alpha=0.3)
-        
-        self.FFT = FFT
-        self.FFT.setVisible(False)
+    def resolveConnections(self):
+        super().resolveConnections()
 
-        B.clicked.connect(self.toggleFFTWidgets)
-        return B,None
+        timeplot = self.parent.addons["xy"].plt
+        specplot = self.parent.addons["spec"].plt
+        df = self.parent.df
+        R = pg.LinearRegionItem()
+        R.lines[0].label = pg.InfLineLabel(R.lines[0],text="FFT",position=.95,movable=False)
+        #R.lines[1].label = pg.InfLineLabel(R.lines[1],text="FFT",position=.95,movable=False)
+        R.setZValue(10)
+        t0 = df.index[0]
+        t1 = df.index[-1]
+        dt = t1-t0
+        R.setRegion([t0+dt/3,t1-dt/3])
+        R.sigRegionChanged.connect(self.updateFFTRegion)
+        timeplot.addItem(R)
+        self.FFTregion = R
+        self.FFTregion.setVisible(not self.startHidden)
 
-    def toggleFFTWidgets(self):
-        hidden = not self.FFT.isVisible()
-        try: R = self.FFTreg
-        except AttributeError:
-            self.FFT.setLabels(
-                left=self.plt.axes["left"]["item"].label.toPlainText(), 
-                bottom="ℱ{ "+self.plt.axes["bottom"]["item"].label.toPlainText()+"}"
-                )
-            R = pg.LinearRegionItem()
-            R.setZValue(10)
-            t0 = self.df.index[0]
-            t1 = self.df.index[-1]
-            dt = t1-t0
-            R.setRegion([t0+dt/3,t1-dt/3])
-            R.sigRegionChanged.connect(self.updateFFTRegion)
-            self.plt.addItem(R)
-            self.FFTreg = R
+        R2 = pg.LinearRegionItem()
+        R2.lines[0].label = pg.InfLineLabel(R2.lines[0],text="FFT",position=.95,movable=False)
+        R2.setZValue(10)
+        t0 = df.index[0]
+        t1 = df.index[-1]
+        dt = t1-t0
+        R2.setRegion([t0+dt/3,t1-dt/3])
+        specplot.addItem(R2)
+        self.specregion = R2
+        self.specregion.setVisible(not self.startHidden)
 
-        if hidden:self.updateFFTRegion(R)
-        self.FFT.setVisible(hidden)
-        self.FFTreg.setVisible(hidden)
+        R.sigRegionChanged.connect(self.updateR2)
+        R2.sigRegionChanged.connect(self.updateR1)
 
-    def updateFFTRegion(self, range):
-        if not self.FFT.isVisible:return
+    def updateR2(self, reg):self.specregion.setRegion(reg.getRegion())
+    def updateR1(self, reg):self.FFTregion.setRegion(reg.getRegion())
+
+    def toggle(self):
+        super().toggle()
+        visible = self.plt.isVisible()
+        if visible:self.updateFFTRegion()
+        self.FFTregion.setVisible(visible)
+        self.specregion.setVisible(visible)
+
+    def updateData(self, df): self.updateFFTRegion()
+    def updateFFTRegion(self, range = None):
+        if not self.plt.isVisible():return
+        tplt = self.parent.addons["xy"].plt
+        if not tplt.isVisible():return
+        if range is None: range = self.FFTregion
+
         x0x1 = range.getRegion()
-        self.FFT.clearPlots()
-        L = len(self.lines)
-        for idx,tplt in enumerate(self.lines.values()):
+        self.plt.clearPlots()
+        L = len(self.parent.lines)
+        for idx,tplt in enumerate(self.parent.lines.values()):
             selectedData = tplt.getData()
             mask = np.logical_and(selectedData[0]>=x0x1[0],selectedData[0]<=x0x1[1])
             X = selectedData[0][mask]
@@ -132,186 +156,61 @@ class SubPlot(_SP):
             T = (X[-1]-X[0])/N
             yf = 2.0/N * np.abs(fft.fft(Y)[0:N//2])
             xf = np.linspace(0.0, 1.0/(2.0*T),N//2)
-            self.FFT.plot(x=xf[1:],y=yf[1:],pen=(idx,L))
+            self.plt.plot(x=xf[1:],y=yf[1:],pen=(idx,L))
+        
+        timeplot = self.parent.addons["xy"].plt
+        self.plt.setLabels(
+                bottom="ℱ{ "+timeplot.axes["bottom"]["item"].label.toPlainText()+"}"+f" [range: {X[0]:.3f} to {X[-1]:.3f}]"
+                )
 
-class Addon(QtCore.QObject):
-    name = "Addon"
-    row = 0
-    transparentstyle="background: transparent;color:#969696;border-color: #969696;border-width: 1px;border-style: solid;min-width: 3em;"
-    def __init__(self, parent):
-        super().__init__()
-        self.parent = parent
-        self.content = QtWidgets.QTreeView()
-        self.button = QtWidgets.QPushButton(self.name)
-        self.button.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.button.setStyleSheet(f"QPushButton{{{self.transparentstyle}}}")
-        self.button.clicked.connect(self.toggle)
-        self.content.setVisible(False)
+class Addon_spec(Addon_xy):
+    name = "spec"
+    startHidden = True
 
-    def fillContent(self):
-        pass
-
-    def toggle(self):
-        pass
-
-class Addon_cursors(Addon):
-    name = "Cursors"
+    windowLenRel = 4
+    windowOverlapRel = 4
+    windowOverlap = 1024/8*4
+    windowLenBase = 256
+    windowLen = 1024
 
     def __init__(self, parent):
         super().__init__(parent)
-        view = self.content
-        view.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        view.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        view.setStyleSheet("""
-        QTreeView{background-color:transparent;color:#969696}
-        QTreeView::section{background-color: transparent;color:#969696}
-        QHeaderView{background-color: transparent;color:#969696}
-        QHeaderView::section{background-color: transparent;color:#969696}""")
+        self.dataCol = 0
+        self.img = pg.ImageItem()
+        self.img.setOpts(axisOrder='row-major')
+        self.hist = HoriHist()
+        self.plt.addItem(self.img)
+        self.hist.setImageItem(self.img)
+        self.hist.setVisible(not self.startHidden)
+        self.options = self.buildOptions()
+        self.options.setVisible(not self.startHidden)
 
-        self.view=view
-
-    def toggle(self):
-        hidden = not self.content.isVisible()
-
-        try: vL1 = self.parent.plt.vL1
-        except AttributeError:
-            vL1 = pg.InfiniteLine(angle=90, movable=True)
-            vL2 = pg.InfiniteLine(angle=90, movable=True)
-            self.parent.plt.addItem(vL1, ignoreBounds=True)
-            self.parent.plt.addItem(vL2, ignoreBounds=True)
-            self.parent.plt.vL1 = vL1
-            self.parent.plt.vL2 = vL2
-            vL1.sigPositionChangeFinished.connect(self.updateCursors)
-            vL2.sigPositionChangeFinished.connect(self.updateCursors)
-        vL2 = self.parent.plt.vL2
-
-        #now, we know vl1 and vl2.
-        vL1.setVisible(hidden)
-        vL2.setVisible(hidden)
-        if hidden:self.updateCursors()
-
-        self.content.setVisible(hidden)
-
-    def updateCursors(self):
-        print("bla")
-        df = self.parent.df
-        try:mdl=self.view.model().sourceModel()
-        except:
-            try:xlabel = df.index.name
-            except: return
-            fltmdl = QtCore.QSortFilterProxyModel()
-            mdl = QtGui.QStandardItemModel()
-            fltmdl.setSourceModel(mdl)
-            self.view.setModel(fltmdl)
-            self.view.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        mdl.clear()
-
-        headernames = ["", df.index.name]+[x for x in df.columns]
-        L = len(headernames)
-        mdl.setHorizontalHeaderLabels(headernames)
-        mdl.setColumnCount(L)
-        xheadernames = ["@1","@2","Δ","1/Δ"]
-        self.view.setMaximumHeight(20*len(xheadernames)+30)
-        
-        vL1 = self.parent.plt.vL1
-        vL2 = self.parent.plt.vL2
-        X1 = vL1.value()
-        X2 = vL2.value()
-        X1vals = df.iloc[np.argmin(abs(df.index.values-X1))]
-        X2vals = df.iloc[np.argmin(abs(df.index.values-X2))]
-        deltavals = [x2-x1 for x1,x2 in zip(X1vals,X2vals)]
-        freqvals = []
-        for x in deltavals:
-            try:freqvals.append(1.0/x)
-            except:freqvals.append(0)
-        try:freq = 1.0/(X2-X1)
-        except: freq=0
-        vals = [
-            [str(X1)]+[str(x) for x in X1vals],#these are the values at 1
-            [str(X2)]+[str(x) for x in X1vals],#these are the values at 2
-            [str(X2-X1)]+[str(x) for x in deltavals],#these are the deltas
-            [str(freq)]+[str(x) for x in freqvals],#these are the 1/deltas
-        ]
-        for rowidx,name in enumerate(xheadernames):
-            row = [name]
-            for col in range(L-1):
-                row.append(vals[rowidx][col])
-            mdl.appendRow([QtGui.QStandardItem(x) for x in row])
-        for idx in range(L):
-            self.view.resizeColumnToContents(L-1-idx)
-        self.view.model().invalidate()
-        print("blubb")
-class Addon_FFT(Addon):
-    name = "FFT"
-class Addon_spec(Addon):
-    name = "Spec"
-
-class Spec(QtCore.QObject):
-    def __init__(self, parent, row, col=0):
-        super().__init__()
-        self.parent = parent
-        L = self.parent.addLayout(row=row,col=col)
-
-        #fplt
-        self.fplt = L.addPlot(row=0,col=0,colspan=2)
-        self.fplt.addLegend()
-        self.fplt.showGrid(x=True,y=True,alpha=0.3)
-
-        #hist
-        hist = HoriHist()
-        L.addItem(hist,row=1,col=0,rowspan=1)
-        self.hist = hist
-
-        #rest (wrapped in a proxy)
-        self.windowLenRel = 4
-        self.windowOverlapRel = 4
-        self.windowLenBase = 256
-
-        C = QtWidgets.QGraphicsProxyWidget()
-        W = QtWidgets.QWidget()
-        W.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        W.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        C.setWidget(W)
-        L.addItem(C,row=1,col=1,rowspan=1)
-
-
-        B = QtWidgets.QPushButton("Spec")
-        B.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        B.setStyleSheet(f"QPushButton{{{self.parent.transparentstyle}}}")
-        B.clicked.connect(self.toggle)
-        self.toggleButton = B
-        self.container = L
-        L.setVisible(False)
-
-        self.initplt()
-
-    def initplt(self):
-        img = pg.ImageItem()
-        img.setOpts(axisOrder='row-major')
-        self.img = img
-        self.hist.setImageItem(img)
-        self.fplt.addItem(img)
-
-        self.fplt.showGrid(True,True,1)
-        self.fplt.setXLink(self.parent.plt)
-
-    def calc(self):
-        col = self.parent.df.columns[0]
-        Y=self.parent.df[col].values
-        T=self.parent.df.index.values
+    def calc(self,df):
+        col =df.columns[self.dataCol]
+        Y=df[col].values
+        T=df.index.values
         L = len(T)
-        WL = int(self.windowLenBase*self.windowLenRel)
+
+        self.windowLen = int(self.windowLenBase*self.windowLenRel)
+        self.windowOverlap = int(self.windowLen/8*self.windowOverlapRel)
+        self.opt_overlay.setText(f"Window overlap: {self.windowOverlap}")
+        self.opt_windowlen.setText(f"Window len: {self.windowLen}")
+        for proxy in self.parent.proxys:
+            proxy.update()
+            proxy.updateGeometry()
+
         self.f, self.t, self.Sxx = signal.spectrogram(
                 Y, 
                 1/((T[-1]-T[0])/L),
                 scaling = 'spectrum',
                 mode='magnitude',
-                nperseg= WL,
-                noverlap=int(WL/8*self.windowOverlapRel))
+                nperseg= self.windowLen,
+                noverlap=self.windowOverlap)
         self.Sxx*=2.0
 
-    def update(self):
-        self.calc()
+    def updateData(self, df = None):
+        if df is None:df = self.parent.df
+        self.calc(df)
         # Sxx contains the amplitude for each pixel
         self.img.setImage(self.Sxx)
 
@@ -320,31 +219,144 @@ class Spec(QtCore.QObject):
         self.img.scale(self.t[-1]/np.size(self.Sxx, axis=1),
                 self.f[-1]/np.size(self.Sxx, axis=0))
         self.hist.setLevels(np.min(self.Sxx), np.percentile(self.Sxx,97))
-    
-        #self.hist.gradient.restoreState(
-        #        {'mode': 'rgb',
-        #        'ticks': [(0.8, (0, 182, 188, 255)),
-        #                (1.0, (246, 111, 0, 255)),
-        #                (0.0, (75, 0, 113, 255))]})
-    
+
         # Limit panning/zooming to the spectrogram
-        t1 = self.parent.df.index[-1]
-        t0 = self.parent.df.index[0]
-        freq = len(self.parent.df.index)/(t1-t0)
-        self.fplt.setLimits(yMin=0, yMax=freq/2.0)
-        for x in self.fplt.axes:
-            ax = self.fplt.getAxis(x)
+        t1 = df.index[-1]
+        t0 = df.index[0]
+        freq = len(df.index)/(t1-t0)
+        self.plt.setLimits(yMin=0, yMax=freq/2.0)
+        for x in self.plt.axes:
+            ax = self.plt.getAxis(x)
             ax.setZValue(1)
 
-        col = self.parent.df.columns[0]
-        self.fplt.setLabels(left=f"ℱ{{{col}}}", bottom=self.parent.plt.axes["bottom"]["item"].label.toPlainText())
+        timeplot = self.parent.addons["xy"].plt
+        col = df.columns[0]
+        self.plt.setLabels(left=f"ℱ{{{col}}}", bottom=timeplot.axes["bottom"]["item"].label.toPlainText())
+
+    def getGuiElements(self):
+        return [[
+            self.plt, 
+            [[self.options],[self.hist]]
+        ]]
+
+    def resolveConnections(self):
+        super().resolveConnections()
 
     def toggle(self):
-        hidden = not self.container.isVisible()
-        if hidden: 
-            self.hist.imageChanged()
-            self.update()
-        self.container.setVisible(hidden)
+        hidden = not self.plt.isVisible()
+        if hidden:self.updateData()
+        self.plt.setVisible(hidden)
+        self.hist.setVisible(hidden)
+        self.options.setVisible(hidden)
+
+    def buildOptions(self):
+        W = QtWidgets.QWidget()
+        L = QtWidgets.QGridLayout()
+        W.setLayout(L)
+
+        L.setSpacing(0)
+        L.setContentsMargins(0,0,0,0)
+
+        R   = QtWidgets.QPushButton("<");R.setStyleSheet(f"QPushButton{{{self.parent.style}}}")
+        Lbl = QtWidgets.QLabel(self.parent.df.columns[self.dataCol]);Lbl.setMaximumWidth(600);Lbl.setStyleSheet(f"QLabel{{{self.parent.style}}}")
+        F   = QtWidgets.QPushButton(">");F.setStyleSheet(f"QPushButton{{{self.parent.style}}}")
+        R.clicked.connect(lambda:self.setDataCol(-1))
+        F.clicked.connect(lambda:self.setDataCol(1))
+        self.opt_datacol = Lbl
+
+        OLR   = QtWidgets.QPushButton("<");OLR.setStyleSheet(f"QPushButton{{{self.parent.style}}}")
+        OLbl  = QtWidgets.QLabel(f"Window overlap: {self.windowOverlap}");OLbl.setMaximumWidth(600);OLbl.setStyleSheet(f"QLabel{{{self.parent.style}}}")
+        OLF   = QtWidgets.QPushButton(">");OLF.setStyleSheet(f"QPushButton{{{self.parent.style}}}")
+        OLR.clicked.connect(lambda:self.setOverlap(-1))
+        OLF.clicked.connect(lambda:self.setOverlap(1))
+        self.opt_overlay = OLbl
+
+        WLR   = QtWidgets.QPushButton("<");WLR.setStyleSheet(f"QPushButton{{{self.parent.style}}}")
+        WLbl   = QtWidgets.QLabel(f"Window len: {self.windowLen}");WLbl.setMaximumWidth(600);WLbl.setStyleSheet(f"QLabel{{{self.parent.style}}}")
+        WLF   = QtWidgets.QPushButton(">");WLF.setStyleSheet(f"QPushButton{{{self.parent.style}}}")
+        WLR.clicked.connect(lambda:self.setWindowlen(-1))
+        WLF.clicked.connect(lambda:self.setWindowlen(1))
+        self.opt_windowlen = WLbl
+        self.opt = W
+
+        L.addWidget(R,0,0)
+        L.addWidget(Lbl,0,1)
+        L.addWidget(F,0,2)
+
+
+        L.addWidget(OLR,1,0)
+        L.addWidget(OLbl,1,1)
+        L.addWidget(OLF,1,2)
+
+        L.addWidget(WLR,2,0)
+        L.addWidget(WLbl,2,1)
+        L.addWidget(WLF,2,2)
+
+        return W
+
+    def setDataCol(self,inc):
+        self.dataCol += inc
+        L = len(self.parent.df.columns)
+        if self.dataCol<0: self.dataCol = L-1
+        if self.dataCol>=L: self.dataCol = 0
+        self.opt_datacol.setText(self.parent.df.columns[self.dataCol])
+        self.updateData()
+
+    def setOverlap(self,inc):
+        self.windowOverlapRel +=inc
+        max = 8-1
+        if self.windowOverlapRel<1: self.windowOverlapRel = max
+        if self.windowOverlapRel>max: self.windowOverlapRel = 1
+        self.updateData()
+
+    def setWindowlen(self,inc):
+        self.windowLenRel +=inc
+        max = 8
+        if self.windowLenRel<1: self.windowLenRel = max
+        if self.windowLenRel>max: self.windowLenRel = 1
+        self.updateData()
+
+class Addon_meas(Addon):
+    name="meas"
+    startHidden = True
+
+    def __init__(self,parent):
+        super().__init__(parent)
+
+        df = self.parent.df
+        t0 = df.index[0]
+        t1 = df.index[-1]
+        dt = t1-t0
+        f = len(df.index)/dt
+
+        c1 = measLine(angle=90, movable=True, pos = t0+dt/3); c1._parent = [self.parent,"xy"]
+        c2 = measLine(angle=90, movable=True, pos = t0+2*dt/3); c2._parent = [self.parent,"xy"]
+        c3 = measLine(angle=90, movable=True, pos = 1*f/6); c3._parent = [self.parent,"fft"]
+        c4 = measLine(angle=90, movable=True, pos = 2*f/6); c4._parent = [self.parent,"fft"]
+
+        self.cursors = [c1,c2,c3,c4]
+        self.hidden = self.startHidden
+
+    def resolveConnections(self):
+        self.parent.addons["buttons"].buttons[self.name].clicked.connect(self.toggle)
+        for x in self.cursors:
+            x.sigPositionChangeFinished.connect(self.updateData)
+            self.parent.addons[x._parent[1]].plt.addItem(x)
+            x.setVisible(not self.startHidden)
+            
+
+    def getGuiElements(self):
+        return []
+
+    def updateData(self, cursordata):
+        pass
+
+    def toggle(self):
+        for x in self.cursors:
+            x.setVisible(self.hidden)
+            x.label.valueChanged()
+        self.hidden=not self.hidden
+
 class HoriHist(pg.HistogramLUTItem):
     def __init__(self, image=None, fillHistogram=True, rgbHistogram=False, levelMode='mono'):
         pg.GraphicsWidget.__init__(self)
@@ -358,8 +370,8 @@ class HoriHist(pg.HistogramLUTItem):
         self.layout.setContentsMargins(1,1,1,1)
         self.layout.setSpacing(0)
         self.vb = pg.ViewBox(parent=self)
-        self.vb.setMaximumHeight(152)
-        self.vb.setMinimumHeight(45)
+        self.vb.setMaximumHeight(20)
+        self.vb.setMinimumHeight(20)
         self.vb.setMouseEnabled(x=False, y=True)
 
         self.gradient = pg.GradientEditorItem()
@@ -423,3 +435,28 @@ class HoriHist(pg.HistogramLUTItem):
             p.drawLine(p2 + pg.Point(5, 0), gradRect.bottomRight())
             p.drawLine(gradRect.topLeft(), gradRect.bottomLeft())
             p.drawLine(gradRect.topRight(), gradRect.bottomRight())
+
+class measLine(pg.InfiniteLine):
+    def __init__(self,*args,**kwargs):
+        if "label" in kwargs: kwargs.pop("label")
+        if "labelOpts" in kwargs: kwargs.pop("labelOpts")
+        super().__init__(*args,**kwargs)
+        self._parent = None
+        self.label = measLabel(self, text="",movable=True)
+
+class measLabel(pg.InfLineLabel):
+    def valueChanged(self):
+        if not self.isVisible():
+            return
+        X = self.line.value()
+        if self.line._parent is not None:
+            parent = self.line._parent[0].addons[self.line._parent[1]]
+            data = parent.plt.dataItems
+            headernames = ["X"]+[f"Y{x}" for x in range(len(data))]
+            idx = np.argmin(abs(data[0].xData-X))
+            vals = [X]+list(x.yData[idx] for x in data)
+            lines = []
+            for k,v in zip(headernames,vals):
+                lines.append(f"{k}:\t{v:.4f}")
+            self.setText("\n".join(lines))
+        self.updatePosition()
