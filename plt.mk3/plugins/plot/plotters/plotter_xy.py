@@ -1,6 +1,7 @@
 import pyqtgraph as pg
 from .__plotter__ import Plotter as _P
 from .__plotter__ import SubPlot as _SP
+from .__plotter__ import Addon as _A
 from scipy import fft
 import numpy as np
 from PySide2 import QtCore,QtWidgets,QtGui
@@ -24,26 +25,7 @@ class SubPlot(_SP):
         for k,v in self.addons.items():self.addRowColList(v.getGuiElements())
         for k,v in self.addons.items():v.resolveConnections()
 
-class Addon(QtCore.QObject):
-    name = "Addon"
-    row = 0
-    def __init__(self, parent):
-        super().__init__()
-        self.parent = parent
-
-    def toggle(self):
-        pass
-
-    def getGuiElements(self):
-        return []
-
-    def resolveConnections(self):
-        pass
-
-    def updateData(self,data):
-        pass
-
-class Addon_Buttons(Addon):
+class Addon_Buttons(_A):
     name = "buttons"
     def __init__(self, parent):
         super().__init__(parent)
@@ -56,7 +38,7 @@ class Addon_Buttons(Addon):
     def getGuiElements(self):
         return list(self.buttons.values())
 
-class Addon_xy(Addon):
+class Addon_xy(_A):
     name = "xy"
     startHidden = False
     shareCoords = True
@@ -87,7 +69,7 @@ class Addon_xy(Addon):
         L = len(df.columns)
 
         for idx,colname in enumerate(df.columns):
-            self.parent.lines[colname] = self.plt.plot(y=df[colname],x=df[colname].index,pen=(idx,L),name=colname)
+            self.parent.lines[colname] = self.plt.plot(y=df[colname].values,x=df[colname].index,pen=(idx,L),name=colname)
 
 class Addon_fft(Addon_xy):
     name = "fft"
@@ -316,7 +298,7 @@ class Addon_spec(Addon_xy):
         if self.windowLenRel>max: self.windowLenRel = 1
         self.updateData()
 
-class Addon_meas(Addon):
+class Addon_meas(_A):
     name="meas"
     startHidden = True
 

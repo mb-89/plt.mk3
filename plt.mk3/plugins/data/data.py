@@ -248,7 +248,10 @@ class DFModel(QtGui.QStandardItemModel):
         row = []
         attrs="\n".join(f"{k}: {v}" for k,v in df.attrs.items())
         for idx in range(len(self.header)):
-            item = QtGui.QStandardItem(str(df.attrs[self.srcattr[idx]]))
+            attrName = self.srcattr[idx]
+            if attrName == "idx" and attrName not in df.attrs:
+                df.attrs["idx"] = f"DF{self.rowCount()}"
+            item = QtGui.QStandardItem(str(df.attrs[attrName]))
             item.setToolTip(attrs)
             item.setData(df, QtCore.Qt.UserRole)
             row.append(item)

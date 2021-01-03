@@ -1,0 +1,4 @@
+data.open(I:/006_projects/plt.examples/005.trc)
+data.selectDF(DF0)
+data.setPlotType(Data,data)
+plot.plot()

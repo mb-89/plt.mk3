@@ -60,7 +60,6 @@ class FixedGraphicsLayout(pg.GraphicsLayout):
         self.addItem(layout, row, col, rowspan, colspan)
         return layout
 
-
 class SubPlot(FixedGraphicsLayout):
     style = transparentStyle
     color0 = transparentCol
@@ -144,3 +143,22 @@ class SubPlot(FixedGraphicsLayout):
             self.addRowColList(x,rowWise=not rowWise,_parent=_subparent,_col=col)
         if proxyneeded:
             _subparent.addItem(QtWidgets.QSpacerItem(10,10,QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding))
+
+class Addon(QtCore.QObject):
+    name = "Addon"
+    row = 0
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+
+    def toggle(self):
+        pass
+
+    def getGuiElements(self):
+        return []
+
+    def resolveConnections(self):
+        pass
+
+    def updateData(self,data):
+        pass

@@ -33,10 +33,9 @@ class Parser(_P):
                 if nr == 1: t0 = time_ms
                 time = (time_ms - t0)*1e-3
                 ID = int(ID)
-                Data = [int(x,16) for x in Data]
+                #Data = [int(x,16) for x in Data]
                 frame = {"Time":time,"ID":ID}
-                for idx, byte in enumerate(Data):
-                    frame[f"Byte{idx}"]=byte
+                frame["data"]=int("".join(Data),16)
                 traces.setdefault(ID,[]).append(frame)
         
         dfs = [pd.DataFrame.from_records(x) for x in traces.values() ]
