@@ -108,6 +108,7 @@ class Widget(QtWidgets.QDockWidget):
                     self.app.log.info(f"Functions available:")
                     for fn in sorted(self.app.publicfuns.keys()):
                         self.app.log.info(fn)
+                self.app.execNextCmd()
             else:
                 p = partial(self.app.publicfuns[cmd].trigger, args)
                 self.app.cmdbacklog.append(p)

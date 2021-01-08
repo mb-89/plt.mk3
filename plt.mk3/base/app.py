@@ -11,6 +11,7 @@ import traceback
 
 class App(QtWidgets.QApplication):
     cmdDone = QtCore.Signal()
+    allCmdsDone = QtCore.Signal()
     def __init__(self):
         super().__init__([])
 
@@ -44,11 +45,15 @@ class App(QtWidgets.QApplication):
         if self.started: return
         self.args = args
         self.started = True
-        self.gui.show()
         for p in self.plugins.values(): p.start()
         for idx,cmd in enumerate(args["cmds"]):
             p = partial(self.plugins["cmd"].parse, cmd)
             QtCore.QTimer.singleShot(idx,p)
+        if args["nogui"]:
+            if args["cmds"]: self.allCmdsDone.connect(self.quit)
+            else: QtCore.QTimer.singleShot(0,self.quit)
+        else:
+            self.gui.show()
         self.exec_()
 
     def stop(self):
@@ -64,7 +69,10 @@ class App(QtWidgets.QApplication):
         if notBusyAnymore or self.args["nomultithread"]: self.cmdbusy = False
         if self.cmdbusy:return
         self.cmdbusy = True
-        if not self.cmdbacklog: return
+        if not self.cmdbacklog:
+            self.cmdbusy = False
+            self.allCmdsDone.emit()
+            return
         cmd = self.cmdbacklog.pop(0)
         cmd()
 
