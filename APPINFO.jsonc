@@ -4,6 +4,5 @@
     "version":"0.0.1",
     "description": "plotter based on metaproject.mk3",
     "url": "https://github.com/mb-89/plt.mk3.git",
-    "py_req": ">=3.8.1",
-    "plugins": ["data", "plot"]
+    "py_req": ">=3.8.1"
 }

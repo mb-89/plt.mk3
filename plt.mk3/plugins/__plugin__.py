@@ -4,6 +4,10 @@ from functools import wraps, partial
 _app = None
 
 class Plugin(QtCore.QObject):
+    @staticmethod
+    def getDependencies():
+        return []
+
     def __init__(self, app):
         global _app
         super().__init__()
@@ -19,9 +23,14 @@ def publicFun(fun=None, *, guishortcut = None, isAsync = False):
             return partial(publicFun, guishortcut=guishortcut, isAsync=isAsync)
         fun.__dict__["__is_public_fun__"] = True
         fun.__dict__["__public_fun_shortcut__"] = guishortcut
-        fun.__dict__["__is_async__"] = isAsync
+        fun.__dict__["__is_async__"] = isAsync and not _app.args["noAsync"]
         @wraps(fun)
         def wrapper(*args, **kwargs):
-            fun(*args, **kwargs)
-            if not fun.__dict__["__is_async__"]:_app.cmdDone.emit()
+            if fun.__dict__["__is_async__"]:
+                fun(*args, **kwargs)
+            else:
+                fun(*args, **kwargs)
+                _app.cmdDone.emit()
         return wrapper
+
+

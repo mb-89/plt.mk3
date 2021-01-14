@@ -39,7 +39,7 @@ class Plugin(_P):
         log.addHandler(ch)
 
         #add to statusbar
-        bar = self.app.gui.statusBar()
+        bar = self.app.gui.statusBar
         fn = lambda x: bar.showMessage(x, 0)
         connectLog2fn(log, fn, self.log2Bar)
 
@@ -49,7 +49,14 @@ class Plugin(_P):
 
     def start(self):
         pass
-    
+
+    @publicFun()
+    def info(self, txt: str):
+        """
+        Prints the given text @ lvl==info
+        """
+        self.log.info(txt)
+
     @publicFun(guishortcut="Ctrl+L")
     def toggle(self):
         """

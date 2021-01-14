@@ -6,6 +6,10 @@ from functools import partial
 import os.path as op
 
 class Plugin(_P):
+    @staticmethod
+    def getDependencies():
+        return ["log"]
+
     def __init__(self, app):
         super().__init__(app)
         self.widget = Widget(app)
@@ -19,20 +23,23 @@ class Plugin(_P):
         self.widget.autocomplete()
 
     def start(self):self.widget.start()
+
     def parse(self, cmd): 
         if cmd:
             self.widget.parse(cmd)
 
 class Widget(QtWidgets.QDockWidget):
     def __init__(self, app):
-        super().__init__()
+        super().__init__(app.gui)
         self.app = app
-        self.txt = QtWidgets.QLineEdit(self)
+        self.txt = QtWidgets.QComboBox(self)
+        self.txt.setEditable(True)
+        self.txt.setFocusPolicy(QtCore.Qt.StrongFocus)
         empty = QtWidgets.QWidget(self)
         self.setTitleBarWidget(empty)
         self.setWindowTitle("cmd")
         self.setWidget(self.txt)
-        self.txt.returnPressed.connect(self.parse)
+        self.txt.lineEdit().returnPressed.connect(self.parse)
         app.gui.addDockWidget(QtCore.Qt.TopDockWidgetArea, self)
         self.setFeatures(QtWidgets.QDockWidget.NoDockWidgetFeatures)
         self.setAllowedAreas(QtCore.Qt.TopDockWidgetArea)
@@ -41,12 +48,13 @@ class Widget(QtWidgets.QDockWidget):
 
     def autocomplete(self):
         if not self.comp:return
-        if self.txt.text() == "": self.comp.setCompletionPrefix("")
+        if self.txt.currentText () == "": self.comp.setCompletionPrefix("")
         self.comp.complete()
 
     def togglehide(self):
-        self.setVisible(self.isHidden())
-        self.txt.setFocus()
+        hidden = self.isHidden()
+        self.setVisible(hidden)
+        if hidden:QtCore.QTimer.singleShot(0,self.txt.setFocus)
 
     def start(self):
         list = sorted(self.app.publicfuns.keys())
@@ -56,9 +64,9 @@ class Widget(QtWidgets.QDockWidget):
         self.comp = comp
 
     def parse(self, txt=None):
-        if txt is None:
-            txt = self.txt.text()
-            self.txt.clear()
+        if txt is None or isinstance(txt,int):
+            txt = self.txt.currentText()
+            self.txt.clearEditText()
             self.app.plugins["log"].logwidget.setVisible(True)
 
         if op.isfile(fp := op.abspath(txt)):
@@ -72,7 +80,7 @@ class Widget(QtWidgets.QDockWidget):
             return
 
         cmdmatches = re.findall(r"(.*?)\((.*)\)",txt)
-        if cmdmatches: cmdmatches = cmdmatches[0]
+        if cmdmatches: cmdmatches = [x for x in cmdmatches[0] if x]
         self.app.log.info(f">>> {txt}")
         if len(cmdmatches)==1:
             cmd = cmdmatches[0]
