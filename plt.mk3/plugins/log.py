@@ -6,13 +6,15 @@ import sys
 from PySide2 import QtCore, QtWidgets, QtGui
 from functools import partial
 
+app = QtCore.QCoreApplication.instance()
+
 class Plugin(_P):
     log2Bar = QtCore.Signal(str)
     log2Wid = QtCore.Signal(str)
-    def __init__(self, app):
-        super().__init__(app)
-        self.log = logging.getLogger(self.app.info["name"])
-        self.app.log = self.log
+    def __init__(self):
+        super().__init__()
+        self.log = logging.getLogger(app.info["name"])
+        app.log = self.log
         log = self.log
 
         log.setLevel(logging.DEBUG)
@@ -39,12 +41,12 @@ class Plugin(_P):
         log.addHandler(ch)
 
         #add to statusbar
-        bar = self.app.gui.statusBar
+        bar = app.gui.statusBar
         fn = lambda x: bar.showMessage(x, 0)
         connectLog2fn(log, fn, self.log2Bar)
 
         #add to widget
-        self.logwidget = LogWidget(self.app)
+        self.logwidget = LogWidget()
         connectLog2fn(log, self.logwidget.append, self.log2Wid)
 
     def start(self):
@@ -78,9 +80,8 @@ def connectLog2fn(log, fn ,s):
         log.addHandler(hdl)
 
 class LogWidget(QtWidgets.QDockWidget):
-    def __init__(self, app):
+    def __init__(self):
         super().__init__()
-        self.app = app
         self.lw = QtWidgets.QPlainTextEdit()
 
         f = QtGui.QFont("monospace")
@@ -92,9 +93,9 @@ class LogWidget(QtWidgets.QDockWidget):
         self.lw.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
         self.hide()
         self.setWidget(self.lw)
-        self.app.gui.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self)
+        app.gui.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self)
         self.resize(600,400)
-        self.setWindowTitle(self.app.info["name"]+' log')
+        self.setWindowTitle(app.info["name"]+' log')
         self.append = self.lw.appendPlainText
 
     def togglehide(self):

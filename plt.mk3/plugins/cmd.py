@@ -5,14 +5,16 @@ import re
 from functools import partial
 import os.path as op
 
+app = QtCore.QCoreApplication.instance()
+
 class Plugin(_P):
     @staticmethod
     def getDependencies():
         return ["log"]
 
-    def __init__(self, app):
-        super().__init__(app)
-        self.widget = Widget(app)
+    def __init__(self):
+        super().__init__()
+        self.widget = Widget()
 
     @publicFun(guishortcut="Ctrl+^")
     def toggle(self):
@@ -29,9 +31,8 @@ class Plugin(_P):
             self.widget.parse(cmd)
 
 class Widget(QtWidgets.QDockWidget):
-    def __init__(self, app):
+    def __init__(self, ):
         super().__init__(app.gui)
-        self.app = app
         self.txt = QtWidgets.QComboBox(self)
         self.txt.setEditable(True)
         self.txt.setFocusPolicy(QtCore.Qt.StrongFocus)
@@ -57,7 +58,7 @@ class Widget(QtWidgets.QDockWidget):
         if hidden:QtCore.QTimer.singleShot(0,self.txt.setFocus)
 
     def start(self):
-        list = sorted(self.app.publicfuns.keys())
+        list = sorted(app.publicfuns.keys())
         comp = QtWidgets.QCompleter(list)
         comp.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
         self.txt.setCompleter(comp)
@@ -67,12 +68,12 @@ class Widget(QtWidgets.QDockWidget):
         if txt is None or isinstance(txt,int):
             txt = self.txt.currentText()
             self.txt.clearEditText()
-            self.app.plugins["log"].logwidget.setVisible(True)
+            app.plugins["log"].logwidget.setVisible(True)
 
         if op.isfile(fp := op.abspath(txt)):
             filecmds = open(fp,"r").readlines()
             if filecmds:
-                self.app.log.info(f">>> executing {fp}")
+                app.log.info(f">>> executing {fp}")
             for idx, cmd in enumerate(filecmds):
                 x = cmd.strip()
                 if not x:continue
@@ -81,7 +82,7 @@ class Widget(QtWidgets.QDockWidget):
 
         cmdmatches = re.findall(r"(.*?)\((.*)\)",txt)
         if cmdmatches: cmdmatches = [x for x in cmdmatches[0] if x]
-        self.app.log.info(f">>> {txt}")
+        app.log.info(f">>> {txt}")
         if len(cmdmatches)==1:
             cmd = cmdmatches[0]
             args = []
@@ -95,32 +96,32 @@ class Widget(QtWidgets.QDockWidget):
         try:
             if cmd == "?":
                 if args:
-                    targetfun = self.app.publicfuns[args[0]]
+                    targetfun = app.publicfuns[args[0]]
                     docstring = targetfun.getDescr()
-                    self.app.log.info("="*30)
-                    self.app.log.info(args[0]+":")
+                    app.log.info("="*30)
+                    app.log.info(args[0]+":")
                     for line in docstring.split("\n"):
-                        self.app.log.info(line)
+                        app.log.info(line)
                     #get inputs (TODO)
                     #get outputs (TODO)
-                    self.app.log.info("="*30)
+                    app.log.info("="*30)
                 else:
                     #print general help
-                    self.app.log.info(f"{self.app.info['name']} help:")
-                    self.app.log.info(f"{self.app.info['description']}")
-                    self.app.log.info("="*30)
-                    self.app.log.info(f"Ctrl+Space for autocomplete.")
-                    self.app.log.info(f"enter <function name> for help on function (eg: 'log.toggle' shows help on log.toggle).")
-                    self.app.log.info(f"enter <function name>(args) to call a function (eg: 'log.toggle()' toggles log.")
-                    self.app.log.info("="*30)
-                    self.app.log.info(f"Functions available:")
-                    for fn in sorted(self.app.publicfuns.keys()):
-                        self.app.log.info(fn)
-                self.app.execNextCmd()
+                    app.log.info(f"{app.info['name']} help:")
+                    app.log.info(f"{app.info['description']}")
+                    app.log.info("="*30)
+                    app.log.info(f"Ctrl+Space for autocomplete.")
+                    app.log.info(f"enter <function name> for help on function (eg: 'log.toggle' shows help on log.toggle).")
+                    app.log.info(f"enter <function name>(args) to call a function (eg: 'log.toggle()' toggles log.")
+                    app.log.info("="*30)
+                    app.log.info(f"Functions available:")
+                    for fn in sorted(app.publicfuns.keys()):
+                        app.log.info(fn)
+                app.execNextCmd()
             else:
-                p = partial(self.app.publicfuns[cmd].trigger, args)
-                self.app.cmdbacklog.append(p)
-                self.app.execNextCmd()
+                p = partial(app.publicfuns[cmd].trigger, args)
+                app.cmdbacklog.append(p)
+                app.execNextCmd()
         except KeyError:
-            self.app.log.error(f"<<< invalid command")
-        #self.app.log.info("")
+            app.log.error(f"<<< invalid command")
+        #app.log.info("")

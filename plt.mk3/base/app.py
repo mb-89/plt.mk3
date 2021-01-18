@@ -1,8 +1,6 @@
 from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtUiTools import QUiLoader
 import os.path as op
-from jsmin import jsmin
-import json
 import plugins
 import importlib
 import inspect
@@ -15,13 +13,11 @@ import glob
 class App(QtWidgets.QApplication):
     cmdDone = QtCore.Signal()
     allCmdsDone = QtCore.Signal()
-    def __init__(self):
+    def __init__(self, args, info):
         super().__init__([])
 
-        appinfotxt = open(op.join(op.dirname(__file__),"..","..","APPINFO.jsonc"),"r").read()
-        self.info = json.loads(jsmin(appinfotxt))
         self.started = False
-
+        self.info = info
         self.gui = AppWindow()
         self.gui.setWindowTitle(self.info["name"])
 
@@ -30,7 +26,7 @@ class App(QtWidgets.QApplication):
         #stylesheet = styletemplate.substitute(**stylevars)
 
         self.log = None
-        self.args = []
+        self.args = args
         self.cmdbacklog = []
         self.cmdDone.connect(lambda:self.execNextCmd(notBusyAnymore=True))
         self.cmdbusy = False
@@ -45,11 +41,12 @@ class App(QtWidgets.QApplication):
             ok |= (pb.endswith(".py") and not pb.startswith("_"))
             if not ok: continue
             if pb.endswith(".py"):pb = pb[:-3]
-            try:pluginmodule = importlib.import_module("plugins."+pb)
-            except Exception as e:
-                estr = f"Error loading plugin <{pb}>: {str(e)}"
-                QtCore.QTimer.singleShot(0,lambda:self.log.error(estr))
-                continue
+            #try:
+            pluginmodule = importlib.import_module("plugins."+pb)
+            #except Exception as e:
+            #    estr = f"Error loading plugin <{pb}>: {str(e)}"
+            #    QtCore.QTimer.singleShot(0,lambda:self.log.error(estr))
+            #    continue
             if hasattr(pluginmodule,"Plugin"):
                 pluginmods[pb] = pluginmodule
         
@@ -58,7 +55,7 @@ class App(QtWidgets.QApplication):
         unresolvedPlugins = []
         for k,v in pluginmods.items():
             if all([x in allmods for x in v.Plugin.getDependencies()]):
-                plugin = v.Plugin(self)
+                plugin = v.Plugin()
                 self.plugins[k] = plugin
                 resolvedPlugins.append(k)
             else:
@@ -76,17 +73,16 @@ class App(QtWidgets.QApplication):
 
         self.aboutToQuit.connect(self.stop)
 
-    def start(self, args):
+    def start(self):
         if self.started: return
-        self.args = args
         self.started = True
         for p in self.plugins.values(): p.start()
-        for idx,cmd in enumerate(args["cmds"]):
+        for idx,cmd in enumerate(self.args["cmds"]):
             p = partial(self.plugins["cmd"].parse, cmd)
             QtCore.QTimer.singleShot(idx,p)
 
-        if args["nogui"]:
-            if args["cmds"]: self.allCmdsDone.connect(self.quit)
+        if self.args["nogui"]:
+            if self.args["cmds"]: self.allCmdsDone.connect(self.quit)
             else: QtCore.QTimer.singleShot(0,self.quit)
         else:
             stylesheet = qdarkstyle.load_stylesheet(qt_api='pyside2')
@@ -105,7 +101,7 @@ class App(QtWidgets.QApplication):
         self.stop()
 
     def execNextCmd(self, notBusyAnymore = False):
-        if notBusyAnymore or self.args["nomultithread"]: self.cmdbusy = False
+        if notBusyAnymore or self.args["noAsync"]: self.cmdbusy = False
         if self.cmdbusy:return
         self.cmdbusy = True
         if not self.cmdbacklog:
