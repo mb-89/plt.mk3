@@ -106,6 +106,8 @@ class DFView(QtWidgets.QTableView):
         self.horizontalHeader().setHighlightSections(False)
         self.horizontalHeader().setStretchLastSection(True)
         self.setItemDelegate(DFDelegate())
+        self.doubleClicked.connect(self.dblclk)
+        self.dialogs = []
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():  e.accept()
@@ -138,6 +140,32 @@ class DFView(QtWidgets.QTableView):
             self.model().toggleDFselected(x)
         self.repaint()
 
+    def dblclk(self,idx):
+        data = self.model()._data[idx.row()]
+        key = list(data.attrs.keys())[idx.column()]
+        if key == "attrs(?)":
+            D = QtWidgets.QDialog()
+            D.setWindowTitle(f'{data.attrs["name"]} attribs')
+            L=QtWidgets.QHBoxLayout()
+            L.setContentsMargins(0,0,0,0)
+            L.setSpacing(0)
+            W = QtWidgets.QTreeView()
+            M = QtGui.QStandardItemModel()
+            W.setModel(M)
+            M.setColumnCount(2)
+            M.setHorizontalHeaderLabels(["attrib","value"])
+            L.addWidget(W)
+            D.setLayout(L)
+
+            for k,v in data.attrs["attrs(?)"].items():
+                row = [QtGui.QStandardItem(str(k)), QtGui.QStandardItem(str(v))]
+                M.appendRow(row)
+
+            self.dialogs.append(D)
+            D.show()
+            D.closeEvent = lambda x:self.dialogs.remove(D)
+
+
 class DFDelegate(QtWidgets.QStyledItemDelegate):
     def paint(self, painter, option, index):
         sel = index.model().selectedRows
@@ -154,6 +182,13 @@ class DFDelegate(QtWidgets.QStyledItemDelegate):
             def value(x):
                 return x.currentText()
             cb._value = partial(value,cb)
+
+            def reindex(df,newidx):
+                df.reset_index(inplace = True)
+                df.set_index(newidx,inplace = True)
+                app.log.info(f"re-indexed {df.attrs['name']} to {newidx}")
+            cb._set = reindex
+
             return cb
 
         elif key.startswith("idxtara"):
@@ -162,6 +197,7 @@ class DFDelegate(QtWidgets.QStyledItemDelegate):
                 txt = x.text()
                 return "DF.index[0]" if not txt else txt
             le._value = partial(value,le)
+            le._set = None
             return le
 
     def setModelData(self, editor, model, index):
@@ -169,10 +205,7 @@ class DFDelegate(QtWidgets.QStyledItemDelegate):
         key = list(data.attrs.keys())[index.column()]
         v = editor._value()
         data.attrs[key] = v
-        data.reset_index(inplace = True)
-        data.set_index(v,inplace = True)
-        app.log.info(f"re-indexed {data.attrs['name']} to {v}")
-
+        if editor._set is not None: editor._set(data,v)
 
 #https://learndataanalysis.org/display-pandas-dataframe-with-pyqt5-qtableview-widget/
 class DFModel(QtCore.QAbstractTableModel):

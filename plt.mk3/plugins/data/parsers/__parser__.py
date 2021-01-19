@@ -49,7 +49,7 @@ class Parser(QObject):
         df.attrs["rows x cols"] = f"{len(df)} x {len(df.columns)}"
         df.attrs["idxcol*"] = df.index.name
         df.attrs["idxtara*"] = "DF.index[0]"
-        df.attrs["attrs"] = subattrs
+        df.attrs["attrs(?)"] = subattrs
         nrOfDataFrames+=1
 
     def reduceColnames(self, df):
